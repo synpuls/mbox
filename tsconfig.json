@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true,
+    "moduleResolution": "Bundler",
+    "baseUrl": ".",
+    "paths": {
+      "mbox": ["./src/index.ts"],
+      "mbox/gfm": ["./src/gfm.ts"],
+      "mbox/hatena": ["./src/hatena.ts"],
+      "mbox/scrapbox": ["./src/scrapbox.ts"]
+    },
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "strict": true
+  },
+  "include": [
+    "src",
+    "scripts",
+    "demos",
+    "tests",
+    "vite.config.ts",
+    "vite.demo.config.ts",
+    "vitest.config.ts",
+    "playwright.config.ts"
+  ]
+}

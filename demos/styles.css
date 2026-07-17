@@ -1,0 +1,342 @@
+:root {
+  color: #222;
+  background: #f6f7f9;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.app-shell {
+  width: min(1120px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 32px 0;
+}
+
+.app-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: #667085;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.status {
+  flex: 0 0 auto;
+  border: 1px solid #d0d5dd;
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: #fff;
+  color: #475467;
+  font-size: 13px;
+}
+
+.editor-panel {
+  overflow: hidden;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(16 24 40 / 6%);
+}
+
+#editor {
+  min-height: 560px;
+  --mbox-demo-image-width: 60%;
+}
+
+#editor .mbox-image-preview {
+  width: var(--mbox-demo-image-width);
+}
+
+#editor .mbox-image-measure {
+  margin-right: calc(-1 * var(--mbox-demo-image-width));
+}
+
+#editor .mbox-image-element {
+  max-width: 100%;
+}
+
+#editor .mbox-code-fence-line {
+  background: rgb(228 231 236 / 72%);
+  color: #344054;
+  padding-inline: 10px;
+}
+
+#editor .mbox-code-opening-fence-line {
+  border-radius: 6px 6px 0 0;
+}
+
+#editor .mbox-code-header-line {
+  align-items: center;
+}
+
+#editor .mbox-code-copy-button {
+  background: rgb(255 255 255 / 56%);
+  border: 1px solid rgb(102 112 133 / 18%);
+  border-radius: 4px;
+  color: #667085;
+  cursor: pointer;
+  float: right;
+  font: inherit;
+  font-size: 12px;
+  margin-left: 8px;
+  margin-top: 1px;
+  padding: 0 5px;
+}
+
+#editor .mbox-code-copy-button:hover {
+  background: rgb(255 255 255 / 76%);
+  color: #344054;
+}
+
+#editor .mbox-code-closing-fence-line {
+  border-radius: 0 0 6px 6px;
+}
+
+#editor .mbox-code-content-line {
+  background: rgb(248 250 252 / 72%);
+  padding-inline: 10px;
+}
+
+#editor .mbox-code-info {
+  color: #344054;
+  font-weight: 600;
+}
+
+#editor .mbox-table-cell {
+  box-sizing: border-box;
+  display: inline-block;
+  --mbox-table-column-extra-width: 5ch;
+  width: calc(var(--mbox-table-kit-column-width) + var(--mbox-table-column-extra-width));
+  max-width: var(--mbox-table-kit-cell-max-width, 100%);
+  background: rgb(248 250 252 / 58%);
+  box-shadow: inset 0 0 0 1px rgb(203 213 225 / 76%);
+  overflow-wrap: anywhere;
+  padding-inline: 1ch;
+  vertical-align: top;
+}
+
+#editor .mbox-table-raw-cell {
+  background: transparent;
+  box-shadow: none;
+  display: inline;
+  max-width: none;
+  overflow-wrap: normal;
+  padding-inline: 0;
+  width: auto;
+}
+
+#editor .mbox-table-rendered {
+  align-items: stretch;
+  display: flex;
+  white-space: pre-wrap;
+}
+
+#editor .mbox-table-rendered .mbox-table-cell {
+  flex: 0 1 calc(var(--mbox-table-kit-column-width) + var(--mbox-table-column-extra-width));
+  min-width: 0;
+}
+
+#editor .mbox-table-header .mbox-table-cell {
+  background: rgb(241 245 249 / 70%);
+  font-weight: 600;
+}
+
+/* GFM notation (gfm.html) — mirrors the mbox-* rules above with mbox-gfm-* classes.
+   styles.css is the shared demo-visual layer, so the GFM playground dresses its
+   constructs the same way the Markdown demo dresses the mbox ones. */
+#editor .mbox-gfm-image-preview {
+  width: var(--mbox-demo-image-width);
+}
+
+#editor .mbox-gfm-image-measure {
+  margin-right: calc(-1 * var(--mbox-demo-image-width));
+}
+
+#editor .mbox-gfm-image-element {
+  max-width: 100%;
+}
+
+#editor .mbox-gfm-code-fence-line {
+  background: rgb(228 231 236 / 72%);
+  color: #344054;
+  padding-inline: 10px;
+}
+
+#editor .mbox-gfm-code-opening-fence-line {
+  border-radius: 6px 6px 0 0;
+}
+
+#editor .mbox-gfm-code-header-line {
+  align-items: center;
+}
+
+#editor .mbox-gfm-code-copy-button {
+  background: rgb(255 255 255 / 56%);
+  border: 1px solid rgb(102 112 133 / 18%);
+  border-radius: 4px;
+  color: #667085;
+  cursor: pointer;
+  float: right;
+  font: inherit;
+  font-size: 12px;
+  margin-left: 8px;
+  margin-top: 1px;
+  padding: 0 5px;
+}
+
+#editor .mbox-gfm-code-copy-button:hover {
+  background: rgb(255 255 255 / 76%);
+  color: #344054;
+}
+
+#editor .mbox-gfm-code-closing-fence-line {
+  border-radius: 0 0 6px 6px;
+}
+
+#editor .mbox-gfm-code-content-line {
+  background: rgb(248 250 252 / 72%);
+  padding-inline: 10px;
+}
+
+#editor .mbox-gfm-code-language-label {
+  color: #344054;
+  font-weight: 600;
+}
+
+#editor .mbox-gfm-table-cell {
+  box-sizing: border-box;
+  display: inline-block;
+  --mbox-gfm-table-column-extra-width: 5ch;
+  width: calc(var(--mbox-table-kit-column-width) + var(--mbox-gfm-table-column-extra-width));
+  max-width: var(--mbox-table-kit-cell-max-width, 100%);
+  background: rgb(248 250 252 / 58%);
+  box-shadow: inset 0 0 0 1px rgb(203 213 225 / 76%);
+  overflow-wrap: anywhere;
+  padding-inline: 1ch;
+  vertical-align: top;
+}
+
+#editor .mbox-gfm-table-raw-cell {
+  background: transparent;
+  box-shadow: none;
+  display: inline;
+  max-width: none;
+  overflow-wrap: normal;
+  padding-inline: 0;
+  width: auto;
+}
+
+#editor .mbox-gfm-table-rendered {
+  align-items: stretch;
+  display: flex;
+  white-space: pre-wrap;
+}
+
+#editor .mbox-gfm-table-rendered .mbox-gfm-table-cell {
+  flex: 0 1 calc(var(--mbox-table-kit-column-width) + var(--mbox-gfm-table-column-extra-width));
+  min-width: 0;
+}
+
+#editor .mbox-gfm-table-header .mbox-gfm-table-cell {
+  background: rgb(241 245 249 / 70%);
+  font-weight: 600;
+}
+
+/* Hatena notation (hatena.html) — the demo-visual layer, mirroring the gfm-*
+   block above. Modelled on how a real Hatena blog renders the notation (see the
+   reference article the styling was calibrated against): headings map to h3/h4/h5
+   and read as a clear hierarchy with generous vertical rhythm. The rhythm is
+   PADDING, not margin, so it is part of the line box CodeMirror measures and
+   stays constant whether the line is focused or not (no height jump on reveal). */
+#editor .mbox-hatena-h3 {
+  padding-top: 0.7em;
+  padding-bottom: 0.25em;
+}
+
+#editor .mbox-hatena-h4 {
+  padding-top: 0.55em;
+  padding-bottom: 0.2em;
+}
+
+#editor .mbox-hatena-h5 {
+  padding-top: 0.4em;
+  padding-bottom: 0.15em;
+}
+
+/* Hatena tables — mirror the gfm-table grid, calibrated to a real Hatena blog:
+   1px solid #ddd cell borders, ~10px horizontal padding, header cells on a
+   #f5f5f5 background. Inactive rows lay their cells out as a flex grid of fixed
+   ch-width columns; an active row falls back to raw inline text for editing. */
+#editor .mbox-hatena-table-cell {
+  box-sizing: border-box;
+  display: inline-block;
+  --mbox-hatena-table-column-extra-width: 4ch;
+  width: calc(var(--mbox-table-kit-column-width) + var(--mbox-hatena-table-column-extra-width));
+  max-width: var(--mbox-table-kit-cell-max-width, 100%);
+  /* An inset box-shadow draws the 1px #ddd border WITHOUT adding to the line's
+     layout height, so revealing the raw cell (which has no border) on focus does
+     not shift the row's height. */
+  box-shadow: inset 0 0 0 1px #ddd;
+  overflow-wrap: anywhere;
+  padding-inline: 10px;
+  vertical-align: top;
+}
+
+#editor .mbox-hatena-table-raw-cell {
+  box-shadow: none;
+  display: inline;
+  max-width: none;
+  overflow-wrap: normal;
+  padding-inline: 0;
+  width: auto;
+}
+
+#editor .mbox-hatena-table-rendered {
+  align-items: stretch;
+  display: flex;
+  white-space: pre-wrap;
+}
+
+#editor .mbox-hatena-table-rendered .mbox-hatena-table-cell {
+  flex: 0 1 calc(var(--mbox-table-kit-column-width) + var(--mbox-hatena-table-column-extra-width));
+  min-width: 0;
+}
+
+#editor .mbox-hatena-table-header-cell {
+  background: #f5f5f5;
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    width: min(100vw - 20px, 1120px);
+    padding: 18px 0;
+  }
+
+  .app-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+}

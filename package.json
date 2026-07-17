@@ -1,0 +1,121 @@
+{
+  "name": "@synpuls/mbox",
+  "version": "0.1.0",
+  "description": "CodeMirror 6 based structured text editor with focused-line raw syntax editing.",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "packageManager": "npm@10.9.8",
+  "author": "synpuls",
+  "homepage": "https://github.com/synpuls/mbox#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/synpuls/mbox.git"
+  },
+  "bugs": {
+    "url": "https://github.com/synpuls/mbox/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js"
+    },
+    "./gfm": {
+      "types": "./dist/gfm.d.ts",
+      "import": "./dist/gfm.js"
+    },
+    "./hatena": {
+      "types": "./dist/hatena.d.ts",
+      "import": "./dist/hatena.js"
+    },
+    "./scrapbox": {
+      "types": "./dist/scrapbox.d.ts",
+      "import": "./dist/scrapbox.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "docs/guide.md"
+  ],
+  "keywords": [
+    "codemirror",
+    "editor",
+    "markdown",
+    "structured-text",
+    "wysiwyg"
+  ],
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build && tsc -p tsconfig.build.json",
+    "build:demo": "vite build --config vite.demo.config.ts",
+    "prepublishOnly": "npm run test:release",
+    "bench:parser": "esbuild scripts/bench-parser.ts --bundle --platform=node --format=esm | node --input-type=module -",
+    "bench:inline-code-highlight": "esbuild scripts/bench-inline-code-highlight.ts --bundle --platform=node --format=esm | node --input-type=module -",
+    "preview": "vite preview --host 127.0.0.1",
+    "knip": "knip",
+    "test": "vitest run --project unit --project dom",
+    "test:demo": "vitest run --project demo",
+    "test:layout": "playwright test",
+    "test:coverage": "vitest run --project unit --project dom --coverage",
+    "test:package": "npm run build && node scripts/package-smoke.mjs",
+    "audit:production": "npm audit --omit=dev --audit-level=low",
+    "lint:package": "publint && attw --pack . --profile esm-only",
+    "test:release": "npm run typecheck && npm run knip && npm run test:coverage && npm run test:demo && npm run test:package && npm run lint:package && npm run audit:production && npm run test:layout",
+    "test:all": "npm run test:release",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@codemirror/lang-javascript": "^6.2.5",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/language-data": "^6.5.2",
+    "@lezer/highlight": "^1.2.3",
+    "@types/mdast": "^4.0.4",
+    "mdast-util-from-markdown": "^2.0.3",
+    "mdast-util-gfm": "^3.1.0",
+    "micromark-extension-gfm": "^3.0.0"
+  },
+  "peerDependencies": {
+    "@codemirror/autocomplete": "^6.20.3",
+    "@codemirror/commands": "^6.10.4",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/search": "^6.7.1",
+    "@codemirror/state": "^6.7.0",
+    "@codemirror/view": "^6.43.4"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
+    "@codemirror/autocomplete": "^6.20.3",
+    "@codemirror/commands": "^6.10.4",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/search": "^6.7.1",
+    "@codemirror/state": "^6.7.0",
+    "@codemirror/view": "^6.43.4",
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^20.19.43",
+    "@vitest/coverage-v8": "^4.1.10",
+    "esbuild": "^0.28.1",
+    "fast-check": "^4.9.0",
+    "happy-dom": "^20.10.6",
+    "katex": "^0.16.47",
+    "knip": "^6.27.0",
+    "publint": "0.3.21",
+    "typescript": "^5.9.3",
+    "vite": "^7.0.0",
+    "vitest": "^4.1.9"
+  }
+}
