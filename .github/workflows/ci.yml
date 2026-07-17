@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # Full quality gate on the primary development Node.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      # Pinned to immutable commits; Dependabot updates these by reviewed PR.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Dead exports / undeclared dependencies; fails fast before the type
+      # and test gates. The zero-findings state is the contract (knip.json
+      # holds the few deliberate exceptions).
+      - run: npm run knip
+      - run: npm run typecheck
+      # Coverage-instrumented run of the same unit+dom projects `npm test` runs.
+      - run: npm run test:coverage
+      - run: npm run test:demo
+      - run: npm run build
+      # Package-shape checks: exports map + d.ts resolution under every
+      # moduleResolution consumers actually use (Bundler / Node16 / NodeNext).
+      - run: npm run lint:package
+      # Direct script call: the job just built, so skip test:package's rebuild.
+      - run: node scripts/package-smoke.mjs
+
+  # The dev toolchain floor is Node 20.19 (vite 7); 22 is covered by `test`.
+  node-matrix:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 24]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run test:package
+
+  # `engines` promises consumers Node >=18, below what vite 7 and happy-dom
+  # can run on — so build on 22, then re-point node at 18 and verify the
+  # packed dist imports and runs its pure API there.
+  node18-consumer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 18
+      - run: node scripts/package-smoke.mjs --import-only
+
+  layout:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: npm run test:layout

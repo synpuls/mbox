@@ -1,0 +1,22 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/index.ts!",
+    "src/testing.ts!",
+    "src/gfm.ts!",
+    "src/hatena.ts!",
+    "src/scrapbox.ts!",
+    "demos/gfm-main.ts",
+    "demos/hatena-main.ts",
+    "demos/scrapbox-main.ts",
+    "demos/scrapbox-demo.ts",
+    "demos/demo.ts",
+    "scripts/*.{mjs,ts}"
+  ],
+  "project": ["src/**/*.ts", "demos/**/*.ts", "scripts/**/*.{mjs,ts}", "tests/**/*.ts"],
+  "tags": ["-internal"],
+  "ignoreIssues": {
+    "src/editor/plugin.ts": ["duplicates"],
+    "src/public-surface.test.ts": ["unlisted"]
+  }
+}

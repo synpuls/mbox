@@ -1,0 +1,20 @@
+node_modules/
+dist/
+dist-demo/
+test-results/
+coverage/
+.DS_Store
+.vscode/
+
+# Generated type declarations; the hand-written ones under src/ and demos/
+# are kept (demos/assets.d.ts was once swallowed by this rule, breaking
+# typecheck on clean checkouts only).
+*.d.ts
+!src/**/*.d.ts
+!demos/*.d.ts
+
+
+# Reference libraries kept alongside for study — not part of mbox, never built.
+/scrapbox-parser
+/xatena-go
+/.dev
