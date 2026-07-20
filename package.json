@@ -81,7 +81,7 @@
   },
   "dependencies": {
     "@codemirror/lang-javascript": "^6.2.5",
-    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/lang-markdown": "^6.5.1",
     "@codemirror/language-data": "^6.5.2",
     "@lezer/highlight": "^1.2.3",
     "@types/mdast": "^4.0.4",
