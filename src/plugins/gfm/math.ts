@@ -19,6 +19,10 @@ const gfmMathSourceClassName = "mbox-gfm-math-source";
  * sanitizer, because that could break legitimate MathML/HTML from renderers
  * such as KaTeX.
  *
+ * Every call must return a newly created, parentless `HTMLElement`. A renderer
+ * must never return the same `Node` more than once: mbox appends the result to
+ * the widget that owns it, and DOM insertion moves an already-parented node.
+ *
  * By default, mbox adds a visually hidden TeX source fallback so assistive
  * technology always has an equivalent representation. Set
  * `providesAccessibleMath` when every DOM node this renderer returns already

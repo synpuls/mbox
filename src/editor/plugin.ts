@@ -109,8 +109,8 @@ export interface MboxDecorationContext {
 }
 export type MboxDecorationProvider = (context: MboxDecorationContext) => MboxDecorationSpec[];
 
-/** An inactive source range whose non-owner decorations must not render. */
-interface MboxDecorationFirewallRange {
+/** @internal An inactive source range whose non-owner decorations must not render. */
+export interface MboxDecorationFirewallRange {
   from: number;
   to: number;
 }
@@ -264,15 +264,15 @@ const mboxDecorations = EditorView.decorations.of((view) => {
   };
 
   const context = createMboxDecorationContext(view);
-  const firewallRanges = providers.flatMap((entry) => {
+  const firewallRanges = sortDecorationFirewallRanges(providers.flatMap((entry) => {
     if (!entry.firewallRanges) return [];
     try {
-      return entry.firewallRanges(context).map((range) => ({ range, owner: entry }));
+      return entry.firewallRanges(context);
     } catch (error) {
       onDecorationError({ phase: "provider", error, pluginName: entry.pluginName, pluginIndex: entry.pluginIndex });
       return [];
     }
-  });
+  }));
   const ranges: ReturnType<typeof createDecorationRanges> = [];
   for (const entry of providers) {
     let specs: MboxDecorationSpec[];
@@ -317,23 +317,61 @@ export function createMboxExtension(options: CreateMboxExtensionOptions = {}): E
 
 function filterSpecsThroughDecorationFirewall(
   specs: MboxDecorationSpec[],
-  firewallRanges: readonly { range: MboxDecorationFirewallRange; owner: MboxDecorationProviderEntry }[],
+  firewallRanges: readonly MboxDecorationFirewallRange[],
   producer: MboxDecorationProviderEntry,
 ): MboxDecorationSpec[] {
   if (firewallRanges.length === 0) return specs;
   // A provider that declares firewall ranges owns structure, so no firewall
-  // filters it -- not even another one's. Comparing entries alone was not
-  // enough: registering the same plugin twice makes two entries, and each
-  // one's firewall then swallowed the other's own replace, leaving the
-  // discarded source visible (measured: `keepalso| gone |`).
+  // filters it -- not even another one's. Every owner that contributed to
+  // `firewallRanges` has this field, while a producer reaching the lookup does
+  // not, so an owner/producer comparison would always be true. This exemption
+  // also preserves duplicate registration: neither owning entry can swallow
+  // the other's replace (measured broken result: `keepalso| gone |`).
   if (producer.firewallRanges) return specs;
+  return filterSpecsThroughDecorationFirewallRanges(specs, firewallRanges);
+}
+
+/** @internal Sort and merge firewall ranges into a searchable union. */
+export function sortDecorationFirewallRanges(
+  ranges: readonly MboxDecorationFirewallRange[],
+): MboxDecorationFirewallRange[] {
+  // Empty and reversed ranges never intersected under the half-open predicate;
+  // omit them so the merged ranges have monotonic starts and ends.
+  const sorted = ranges
+    .filter((range) => range.from < range.to)
+    .map((range) => ({ ...range }))
+    .sort((left, right) => left.from - right.from || left.to - right.to);
+  const merged: MboxDecorationFirewallRange[] = [];
+  for (const range of sorted) {
+    const previous = merged[merged.length - 1];
+    if (previous && range.from <= previous.to) previous.to = Math.max(previous.to, range.to);
+    else merged.push(range);
+  }
+  return merged;
+}
+
+/** @internal Filter specs through a sorted, merged firewall range union. */
+export function filterSpecsThroughDecorationFirewallRanges(
+  specs: MboxDecorationSpec[],
+  firewallRanges: readonly MboxDecorationFirewallRange[],
+): MboxDecorationSpec[] {
   return specs.filter((spec) => {
     if (spec.type === "line" || spec.type === "lineRange") return true;
-    return !firewallRanges.some(({ range, owner }) => owner !== producer && (
-      spec.type === "widget"
-        ? spec.from >= range.from && spec.from < range.to
-        : spec.from < range.to && spec.to > range.from
-    ));
+    let low = 0;
+    let high = firewallRanges.length;
+    // The sorted union has monotonic ends. Find the first range whose end is
+    // after the spec start; every earlier range is disjoint on the left.
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (firewallRanges[middle].to <= spec.from) low = middle + 1;
+      else high = middle;
+    }
+    const range = firewallRanges[low];
+    if (!range) return true;
+    const intersects = spec.type === "widget"
+      ? range.from <= spec.from
+      : range.from < spec.to;
+    return !intersects;
   });
 }
 

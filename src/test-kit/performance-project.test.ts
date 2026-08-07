@@ -54,6 +54,7 @@ describe("the performance project's registration", () => {
     expect(projectNamed("performance").include).toEqual([
       "src/plugins/mbox/parser.inline.test.ts",
       "src/plugins/gfm/math.test.ts",
+      "src/editor/plugin.performance.test.ts",
       "src/plugins/hatena/parser.performance.test.ts",
       "src/plugins/scrapbox/inline.performance.test.ts",
     ]);

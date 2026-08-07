@@ -1405,14 +1405,17 @@ function collectQuoteMarkers(node: Nodes, context: WalkContext): void {
 function lineStartOffsets(input: string): number[] {
   const starts = [0];
   for (let index = 0; index < input.length; index += 1) {
-    if (input[index] === "\n") {
+    if (input[index] === "\r") {
+      if (input[index + 1] === "\n") index += 1;
+      starts.push(index + 1);
+    } else if (input[index] === "\n") {
       starts.push(index + 1);
     }
   }
   return starts;
 }
 
-/** End of a physical line, excluding either LF or CRLF. */
+/** End of a physical line, excluding LF, CRLF, or standalone CR. */
 function lineEndOffset(input: string, lineStarts: number[], line: number): number {
   const nextLineStart = lineStarts[line];
   if (nextLineStart == null) {
@@ -1585,8 +1588,13 @@ function collectBareDollarMath(
   const protectedRangeIntersects = (from: number, to: number) =>
     intersectsProtected(protectedRanges, from, to);
 
+  let openAfterConsumedSingleDollar = -1;
   for (let open = 0; open < input.length; open += 1) {
     if (input[open] !== "$" || isEscaped(input, open) || protectedRangeIntersects(open, open + 1)) continue;
+    // A physical dollar run is considered only at its first character. The
+    // sole exception is `$x$$x$`: accepting the first middle dollar as a
+    // closer consumes it, so the second is now the next expression's opener.
+    if (input[open - 1] === "$" && open !== openAfterConsumedSingleDollar) continue;
     const delimiterLength = input[open + 1] === "$" ? 2 : 1;
     // A longer run is neither of GitHub's delimiter forms.
     if (input[open + delimiterLength] === "$") continue;
@@ -1647,6 +1655,7 @@ function collectBareDollarMath(
     });
     // `open` advances past the accepted close below, so later candidates
     // cannot overlap this range; keep the searched protection index immutable.
+    openAfterConsumedSingleDollar = delimiterLength === 1 ? to : -1;
     open = to - 1;
   }
   document.inlineMath.sort((left, right) => left.from - right.from || left.to - right.to);
@@ -1659,8 +1668,8 @@ function collectBareDollarMath(
  * behavior and belong to the expression.
  */
 function removeDollarBlockBoundaryNewlines(expression: string): string {
-  const withoutOpeningNewline = expression.replace(/^(?:\r\n|\n)/, "");
-  return withoutOpeningNewline.replace(/(?:\r\n|\n)$/, "");
+  const withoutOpeningNewline = expression.replace(/^(?:\r\n|\n|\r)/, "");
+  return withoutOpeningNewline.replace(/(?:\r\n|\n|\r)$/, "");
 }
 
 function findDollarClose(
@@ -1673,12 +1682,22 @@ function findDollarClose(
     if (input[cursor] !== "$" || isEscaped(input, cursor) || intersectsProtected(cursor, cursor + delimiterLength)) continue;
     if (input.slice(cursor, cursor + delimiterLength) !== "$".repeat(delimiterLength)) continue;
     // For `$x$$x$`, the first dollar in the middle run closes the first
-    // expression and the second opens the next. A `$$` delimiter still cannot
-    // be extended into a longer run.
-    if (delimiterLength === 2 && input[cursor + delimiterLength] === "$") continue;
+    // expression and the second opens the next. Runs of three or more are
+    // never delimiters at any position, while a `$$` delimiter must be exactly
+    // two characters long.
+    if (delimiterLength === 2 && (input[cursor - 1] === "$" || input[cursor + delimiterLength] === "$")) continue;
+    if (delimiterLength === 1 && isInDollarRunOfAtLeastThree(input, cursor)) continue;
     return cursor;
   }
   return -1;
+}
+
+function isInDollarRunOfAtLeastThree(input: string, offset: number): boolean {
+  return (
+    (input[offset - 2] === "$" && input[offset - 1] === "$") ||
+    (input[offset - 1] === "$" && input[offset + 1] === "$") ||
+    (input[offset + 1] === "$" && input[offset + 2] === "$")
+  );
 }
 
 function isAsciiAlphaNumeric(character: string | undefined): boolean {
@@ -1730,10 +1749,10 @@ export function intersectsProtected(
 }
 
 function isDollarBlock(input: string, from: number, to: number): boolean {
-  const lineStart = input.lastIndexOf("\n", from - 1) + 1;
-  const lineEnd = input.indexOf("\n", to);
+  const lineStart = physicalLineStart(input, from);
+  const lineEnd = physicalLineEnd(input, to);
   const before = input.slice(lineStart, from);
-  const after = input.slice(to, lineEnd === -1 ? input.length : lineEnd);
+  const after = input.slice(to, lineEnd);
   // Quote prefixes are structural context, but list markers are content here:
   // GitHub leaves list-item dollar runs literal (verified 2026-07-27).
   const quotePrefix = /^(?:[ \t]*>[ \t]*)*$/;
@@ -1741,8 +1760,20 @@ function isDollarBlock(input: string, from: number, to: number): boolean {
 }
 
 function isOnListMarkerLine(input: string, offset: number): boolean {
-  const lineStart = input.lastIndexOf("\n", offset - 1) + 1;
+  const lineStart = physicalLineStart(input, offset);
   return /^[ \t]*(?:[-*+]|\d+[.)])[ \t]+/.test(input.slice(lineStart, offset));
+}
+
+function physicalLineStart(input: string, offset: number): number {
+  return Math.max(input.lastIndexOf("\n", offset - 1), input.lastIndexOf("\r", offset - 1)) + 1;
+}
+
+function physicalLineEnd(input: string, offset: number): number {
+  const cr = input.indexOf("\r", offset);
+  const lf = input.indexOf("\n", offset);
+  if (cr === -1) return lf === -1 ? input.length : lf;
+  if (lf === -1) return cr;
+  return Math.min(cr, lf);
 }
 
 function findContainingTableCell(tables: GfmTable[], from: number, to: number): boolean {

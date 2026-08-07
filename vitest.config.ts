@@ -59,6 +59,7 @@ export default defineConfig({
             "src/**/*.dom.test.ts",
             "src/plugins/mbox/parser.inline.test.ts",
             "src/plugins/gfm/math.test.ts",
+            "src/editor/plugin.performance.test.ts",
             "src/plugins/hatena/parser.performance.test.ts",
             "src/plugins/scrapbox/inline.performance.test.ts",
           ],
@@ -92,6 +93,7 @@ export default defineConfig({
           include: [
             "src/plugins/mbox/parser.inline.test.ts",
             "src/plugins/gfm/math.test.ts",
+            "src/editor/plugin.performance.test.ts",
             "src/plugins/hatena/parser.performance.test.ts",
             // The guards this file owes are todos until the work that makes
             // them pass lands; see the file's own header.

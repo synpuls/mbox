@@ -128,6 +128,21 @@ describe("gfmMathPlugin", () => {
     expect(spec).toMatchObject({ type: "replace", from: 7, to: 12 });
   });
 
+  it.each([
+    ["three-dollar opener", "$$$x$$"],
+    ["three-dollar closer", "$$x$$$"],
+    ["four-dollar runs", "$$$$x$$$$"],
+  ])("does not use any position in a %s as a delimiter", (_description, input) => {
+    expect(parseGfmDocument(input).inlineMath).toEqual([]);
+  });
+
+  it("keeps using the two dollars between adjacent inline expressions as close then open", () => {
+    expect(parseGfmDocument("$x$$x$").inlineMath).toEqual([
+      expect.objectContaining({ from: 0, to: 3, expression: "x", display: "inline" }),
+      expect.objectContaining({ from: 3, to: 6, expression: "x", display: "inline" }),
+    ]);
+  });
+
   it("promotes a dollar-wrapped code span to inline math", () => {
     const [spec] = specsFor("$`x^2`$");
 
@@ -195,6 +210,29 @@ describe("gfmMathPlugin", () => {
       from: 0, to: input.length, expression: "x^2", delimiter: "dollar", display: "block", startLine: 1, endLine: 3,
     }));
     expect(specsFor(input).filter((spec) => spec.type === "replace")).toHaveLength(3);
+  });
+
+  it("treats standalone CR as a physical newline for block boundaries and line numbers", () => {
+    expect(parseGfmDocument("$$\rx\r$$").inlineMath).toEqual([
+      expect.objectContaining({
+        from: 0,
+        to: 7,
+        expression: "x",
+        display: "block",
+        startLine: 1,
+        endLine: 3,
+      }),
+    ]);
+    expect(parseGfmDocument("before\r$$\rx\r$$\rafter").inlineMath).toEqual([
+      expect.objectContaining({
+        from: 7,
+        to: 14,
+        expression: "x",
+        display: "block",
+        startLine: 2,
+        endLine: 4,
+      }),
+    ]);
   });
 
   it.each([

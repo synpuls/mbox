@@ -9,7 +9,9 @@ import {
   createMboxDecorationSetStrict,
   createMboxExtension,
   createContentMarkSpec,
+  filterSpecsThroughDecorationFirewallRanges,
   mboxDecorationProviders,
+  sortDecorationFirewallRanges,
 } from "./plugin.js";
 import type { MboxDecorationSpec, MboxLineDecorationSpec, MboxWidgetDecorationSpec } from "./plugin.js";
 import { createTestContext } from "./test-context.js";
@@ -147,6 +149,44 @@ describe("createMboxExtension", () => {
     expect(state.facet(mboxDecorationProviders)).toEqual([{ provider, pluginName: "test/context", pluginIndex: 0 }]);
   });
 
+});
+
+describe("decoration firewall range lookup", () => {
+  class ProbeWidget extends WidgetType {
+    toDOM(): HTMLElement {
+      return document.createElement("span");
+    }
+  }
+
+  it("sorts ranges and filters half-open intersections without changing spec order", () => {
+    const ranges = sortDecorationFirewallRanges([
+      { from: 8, to: 10 },
+      { from: 2, to: 5 },
+    ]);
+    const keptAtLeftBoundary: MboxDecorationSpec = { type: "mark", from: 0, to: 2, className: "left" };
+    const crossingLeftBoundary: MboxDecorationSpec = { type: "mark", from: 1, to: 3, className: "crossing" };
+    const keptWidgetAtEnd: MboxDecorationSpec = { type: "widget", from: 5, widget: new ProbeWidget() };
+    const blockedWidgetInside: MboxDecorationSpec = { type: "widget", from: 4, widget: new ProbeWidget() };
+    const line: MboxDecorationSpec = { type: "line", from: 3, className: "line" };
+    const keptAfterRanges: MboxDecorationSpec = { type: "mark", from: 10, to: 12, className: "after" };
+    const blockedInSecondRange: MboxDecorationSpec = { type: "replace", from: 8, to: 9 };
+
+    expect(ranges).toEqual([{ from: 2, to: 5 }, { from: 8, to: 10 }]);
+    expect(filterSpecsThroughDecorationFirewallRanges([
+      keptAfterRanges,
+      crossingLeftBoundary,
+      keptWidgetAtEnd,
+      blockedWidgetInside,
+      line,
+      keptAtLeftBoundary,
+      blockedInSecondRange,
+    ], ranges)).toEqual([
+      keptAfterRanges,
+      keptWidgetAtEnd,
+      line,
+      keptAtLeftBoundary,
+    ]);
+  });
 });
 
 describe("createMboxDecorationSetStrict", () => {
