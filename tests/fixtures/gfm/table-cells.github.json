@@ -1,0 +1,8 @@
+{
+  "source": "https://api.github.com/markdown",
+  "method": "POST https://api.github.com/markdown, body {\"text\": <markdown>, \"mode\": \"gfm\"}, unauthenticated",
+  "markdown": "| header one | header two |\n| --- | --- |\n| long | retained | discarded |\n| short |\n| empty ||\n| escaped \\| pipe | right |\nomitted left | omitted right",
+  "html": "<markdown-accessiblity-table><table role=\"table\">\n<thead>\n<tr>\n<th>header one</th>\n<th>header two</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>long</td>\n<td>retained</td>\n</tr>\n<tr>\n<td>short</td>\n<td></td>\n</tr>\n<tr>\n<td>empty</td>\n<td></td>\n</tr>\n<tr>\n<td>escaped | pipe</td>\n<td>right</td>\n</tr>\n<tr>\n<td>omitted left</td>\n<td>omitted right</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>",
+  "fetchedAt": "2026-07-30T16:42:23.652Z",
+  "githubApiVersion": "2022-11-28"
+}

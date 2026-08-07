@@ -23,6 +23,20 @@ function specsFor(input: string, options = {}, activeLines: Iterable<number> = n
 }
 
 describe("createScrapboxImageSpecs", () => {
+  it.each([
+    ["an image URL containing an opening bracket", "[https://placehold.jp/150[x150.png]", "https://placehold.jp/150[x150.png"],
+    ["the extension-only lexical URL form", "[https://.png]", "https://.png"],
+  ])("turns %s into an image widget", (_description, input, src) => {
+    const [spec] = specsFor(input);
+
+    expect(spec).toMatchObject({ type: "replace", from: 0, to: input.length });
+    expect((spec as MboxReplaceDecorationSpec).widget).toBeInstanceOf(ScrapboxImageWidget);
+    const dom = ((spec as MboxReplaceDecorationSpec).widget as ScrapboxImageWidget).toDOM();
+    expect(dom.dataset.src).toBe(src);
+    // jsdom can establish classification and widget creation, but it does not
+    // reproduce a browser's broken-image appearance for `https://.png`.
+  });
+
   it("replaces an image with a token widget by default", () => {
     const [spec] = specsFor(IMG);
 
@@ -54,6 +68,26 @@ describe("createScrapboxImageSpecs", () => {
     expect(anchor?.querySelector("img")).not.toBeNull();
   });
 
+  it("renders a double-bracket src-first image as a linked, non-strong image widget", () => {
+    const input = "[[https://i.com/a.png https://link.com]]";
+    const [spec] = specsFor(input, { renderMode: "preview" });
+
+    expect(spec).toMatchObject({ type: "replace", from: 0, to: input.length });
+    const dom = ((spec as MboxReplaceDecorationSpec).widget as ScrapboxImagePreviewWidget).toDOM();
+    expect(dom.querySelector<HTMLAnchorElement>("a")?.getAttribute("href")).toBe("https://link.com");
+    expect(dom.querySelector<HTMLImageElement>(`img.${scrapboxImageElementClassName}`)?.src).toBe(
+      "https://i.com/a.png",
+    );
+    expect(dom.classList.contains(scrapboxImageStrongClassName)).toBe(false);
+  });
+
+  it("does not wrap a single-bracket image without a link in an anchor", () => {
+    const [spec] = specsFor("[https://i.com/a.png]", { renderMode: "preview" });
+    const dom = ((spec as MboxReplaceDecorationSpec).widget as ScrapboxImagePreviewWidget).toDOM();
+
+    expect(dom.querySelector("a")).toBeNull();
+  });
+
   it("adds the strong class for a double-bracket image", () => {
     const [spec] = specsFor("[[https://i.com/a.png]]");
 
@@ -64,11 +98,9 @@ describe("createScrapboxImageSpecs", () => {
     const gyazo = "https://gyazo.com/0123456789abcdef0123456789abcdef";
     const [tokenSpec] = specsFor(`[${gyazo}]`);
     const tokenDom = ((tokenSpec as MboxReplaceDecorationSpec).widget as ScrapboxImageWidget).toDOM();
-    // A bare gyazo.com url serves an HTML page, not image bytes -- fetching
-    // it directly as an <img> src gets ORB-blocked by the browser (confirmed
-    // against a real Gyazo url), so `src` (and dataset.src, which mirrors it)
-    // resolves to the /raw form via the default resolveSrc; `text` keeps the
-    // original url for display.
+    // `src` (and dataset.src, which mirrors it) resolves to the /raw form via
+    // the default resolveSrc, while `text` keeps the original url for display.
+    // See defaultScrapboxImageSrcResolver for why the default rewrites it.
     expect(tokenDom.dataset.src).toBe(`${gyazo}/raw`);
     expect(tokenDom.textContent).toBe(gyazo);
 

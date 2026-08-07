@@ -2,6 +2,22 @@ import { describe, expect, it } from "vitest";
 import { parseScrapboxDocument, scrapboxCodeBlockLineNumbers } from "./parser.js";
 
 describe("parseScrapboxDocument", () => {
+  it("uses CRLF-free syntax values while retaining raw line ends", () => {
+    const input = "table:t\r\n a\tb\r\ncode:x.js\r\n const value = 1;\r\n";
+    const document = parseScrapboxDocument(input);
+
+    expect(document.codeBlocks[0]).toMatchObject({ fileName: "x.js" });
+    expect(document.tableBlocks[0]).toMatchObject({ name: "t" });
+    expect(document.lines[0]).toMatchObject({ from: 0, to: 8, content: { from: 0, to: 7 }, inline: [{ type: "text", value: "table:t" }] });
+    expect(document.lines.every((line) => line.from >= 0 && line.from <= line.to && line.to <= input.length)).toBe(true);
+  });
+
+  it("keeps a final lone carriage return as source text", () => {
+    const [line] = parseScrapboxDocument("table:t\r").lines;
+
+    expect(line.inline).toEqual([{ type: "text", from: 0, to: 8, value: "table:t\r" }]);
+  });
+
   it("handles repeated unclosed bracket URLs without bracket links or images", () => {
     // No spaces and no closing "]": the pre-fix bracket regex (which swallowed
     // "[") rescanned to the end from every "[" inside a single exec, making it
@@ -22,6 +38,7 @@ describe("parseScrapboxDocument", () => {
         line: 1,
         from: 0,
         to: 5,
+        logicalTo: 5,
         indent: 0,
         listType: "none",
         marker: { from: 0, to: 0 },
@@ -118,6 +135,13 @@ describe("parseScrapboxDocument code blocks", () => {
       openerLine: { line: 1 },
     });
     expect(codeBlocks[0].bodyLines.map((line) => line.line)).toEqual([2, 3]);
+  });
+
+  it("classifies only lowercase code:tex and code:latex as formula blocks, while keeping every block line literal", () => {
+    const document = parseScrapboxDocument("code:tex\n [$ x ]\ncode:latex\n y\ncode:TeX\n z\ncode:tex \n q");
+
+    expect(document.codeBlocks.map((block) => block.kind)).toEqual(["formula", "formula", "code", "code"]);
+    expect(document.lines.map((line) => line.inline)).toEqual([[], [], [], [], [], [], [], []]);
   });
 
   it("ends the code block when indentation returns to the opener level", () => {

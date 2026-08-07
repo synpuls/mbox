@@ -1,0 +1,8 @@
+{
+  "source": "https://api.github.com/markdown",
+  "method": "POST https://api.github.com/markdown, body {\"text\": <markdown>, \"mode\": \"gfm\"}, unauthenticated",
+  "markdown": "The loss $L=\\sum_i p_i l_i$ is minimized.\n\n$$\nx^2\n$$\n\n| a | b |\n| --- | --- |\n| $x^2$ | y |",
+  "html": "<p>The loss <math-renderer class=\"js-inline-math\" style=\"display: inline-block\" data-run-id=\"f489794aafc209a8f7c3c4c2652c67dd\">$L=\\sum_i p_i l_i$</math-renderer> is minimized.</p>\n<p><math-renderer class=\"js-display-math\" style=\"display: block\" data-run-id=\"f489794aafc209a8f7c3c4c2652c67dd\">$$\nx^2\n$$</math-renderer></p>\n<markdown-accessiblity-table><table role=\"table\">\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td><math-renderer class=\"js-inline-math\" style=\"display: inline-block\" data-run-id=\"f489794aafc209a8f7c3c4c2652c67dd\">$x^2$</math-renderer></td>\n<td>y</td>\n</tr>\n</tbody>\n</table></markdown-accessiblity-table>",
+  "fetchedAt": "2026-07-30T16:42:23.652Z",
+  "githubApiVersion": "2022-11-28"
+}

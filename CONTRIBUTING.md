@@ -12,10 +12,14 @@ separately against the built dist.
 - **Before a release, or for changes touching layout, presentation themes, or
   focus behavior:** `npm run test:all` — the coverage-gated package run plus
   the demo tests, the packed-tarball smoke (`test:package`), and the
-  Playwright layout suite (`test:layout`, Chromium; the layout baseline is
-  Chromium-only).
-- CI is authoritative: it runs the full gate (with coverage thresholds and a
-  Node version matrix) even when a local run was skipped.
+  Playwright layout suite (`test:layout`, Chromium, Firefox, and WebKit).
+  Each engine is part of the layout baseline: do not dismiss an engine-specific
+  failure as noise merely because the other engines pass.
+- CI is authoritative: it runs the gate with coverage thresholds and a Node
+  version matrix even when a local run was skipped. It is not a superset of
+  `test:all`, which additionally runs `audit:production`; conversely `test:all`
+  does not run the `performance` project's ratio guards, which CI covers
+  through `npm test`.
 
 [TESTING.md](TESTING.md) documents the test tiers, the conventions each tier
 follows, and how to add tests for a new plugin.

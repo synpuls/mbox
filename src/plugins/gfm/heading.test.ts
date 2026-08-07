@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { createTestContext } from "../../editor/test-context.js";
+import { createTestContext, validateDecorationSpecs } from "../../editor/test-context.js";
 import { gfmHeadingPlugin } from "./heading.js";
 
 const noActiveLines = new Set<number>();
 
 function specsFor(input: string, activeLines: Iterable<number> = noActiveLines) {
-  return gfmHeadingPlugin().decorations!(createTestContext(input, { activeLines }));
+  const context = createTestContext(input, { activeLines });
+  const specs = gfmHeadingPlugin().decorations!(context);
+  validateDecorationSpecs(context, specs);
+  return specs;
 }
 
 describe("gfmHeadingPlugin", () => {
@@ -45,14 +48,29 @@ describe("gfmHeadingPlugin", () => {
   });
 
   it("styles a setext heading's text line without a marker replace or width reservation", () => {
-    // `Title` / `=====` — mdast reports a zero-width marker, so we only style the
-    // text line (level from the underline) and never emit a zero-length replace.
+    // `Title` / `=====` — mdast reports a zero-width marker, so we style the
+    // text line and hide the physical underline with a line decoration only.
     expect(specsFor("Title\n=====")).toEqual([
+      { type: "line", from: 0, className: "mbox-gfm-heading mbox-gfm-h1" },
+      { type: "line", from: 6, className: "mbox-gfm-heading-setext-underline" },
+    ]);
+  });
+
+  it.each([
+    ["the text line", 1],
+    ["the underline itself", 2],
+  ])("reveals a setext underline while %s is active", (_label, activeLine) => {
+    // Both lines count, the rule Section 0 measured for multiline structures.
+    // Without the underline half, a caret moved down into `=====` would land on
+    // a line that stays hidden.
+    expect(specsFor("Title\n=====", [activeLine])).toEqual([
       { type: "line", from: 0, className: "mbox-gfm-heading mbox-gfm-h1" },
     ]);
   });
 
-  it("does not ship a presentation theme (font-size/weight is visual, not structural)", () => {
-    expect(gfmHeadingPlugin().theme).toBeUndefined();
+  it("ships only the structural theme needed to hide an inactive setext underline", () => {
+    expect(gfmHeadingPlugin().theme).toEqual({
+      ".mbox-gfm-heading-setext-underline": { display: "none" },
+    });
   });
 });

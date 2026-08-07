@@ -53,6 +53,16 @@ describe("createCodeBlockKitLanguageLoader", () => {
     await expect(loader.ensureLanguageLoaded("")).resolves.toBeUndefined();
   });
 
+  it.each(["ts\r", "ts\n", "ts\rfoo"])("does not start a load for a rejected info-string terminator: %j", async (infoValue) => {
+    const loadSpy = vi.spyOn(LanguageDescription.prototype, "load");
+    const loader = createCodeBlockKitLanguageLoader(noInfoValues, { languages: ["typescript"] });
+
+    await loader.ensureLanguageLoaded(infoValue);
+
+    expect(loadSpy).not.toHaveBeenCalled();
+    expect(loader.getLanguage(infoValue)).toBeNull();
+  });
+
   it("restricts matching to the given whitelist, ignoring languages outside it", async () => {
     const loader = createCodeBlockKitLanguageLoader(noInfoValues, { languages: ["python"] });
     await loader.ensureLanguageLoaded("ruby");
@@ -65,6 +75,24 @@ describe("createCodeBlockKitLanguageLoader", () => {
     expect(loader.getLanguage("python")).not.toBeNull();
   });
 
+  it("treats surrounding whitespace in configured language names like an unpadded setting", async () => {
+    const loader = createCodeBlockKitLanguageLoader(noInfoValues, { languages: [" javascript "] });
+    await loader.ensureLanguageLoaded("javascript");
+    expect(loader.getLanguage("javascript")).not.toBeNull();
+  });
+
+  it.each(["java\nscript", "typescript\n"])("does not turn a configured language name with a line terminator into an allowed entry: %j", async (languageId) => {
+    const loadSpy = vi.spyOn(LanguageDescription.prototype, "load");
+    // A newline in a hand-written setting is a typo, not padding. Rejecting it
+    // keeps it from silently changing which languages the allowlist enables.
+    const loader = createCodeBlockKitLanguageLoader(noInfoValues, { languages: [languageId] });
+
+    await loader.ensureLanguageLoaded("typescript");
+
+    expect(loadSpy).not.toHaveBeenCalled();
+    expect(loader.getLanguage("typescript")).toBeNull();
+  });
+
   describe("with infoValueKind: \"fileName\"", () => {
     it("resolves a filename containing spaces, unlike the default infoString interpretation", async () => {
       const infoStringLoader = createCodeBlockKitLanguageLoader(noInfoValues);
@@ -74,6 +102,16 @@ describe("createCodeBlockKitLanguageLoader", () => {
       const fileNameLoader = createCodeBlockKitLanguageLoader(noInfoValues, { infoValueKind: "fileName" });
       await fileNameLoader.ensureLanguageLoaded("my script.py");
       expect(fileNameLoader.getLanguage("my script.py")).not.toBeNull();
+    });
+
+    it.each(["a.ts\r", "a.ts\n", "my\rfile.ts"])("does not start a load for a rejected filename terminator: %j", async (fileName) => {
+      const loadSpy = vi.spyOn(LanguageDescription.prototype, "load");
+      const loader = createCodeBlockKitLanguageLoader(noInfoValues, { languages: ["typescript"], infoValueKind: "fileName" });
+
+      await loader.ensureLanguageLoaded(fileName);
+
+      expect(loadSpy).not.toHaveBeenCalled();
+      expect(loader.getLanguage(fileName)).toBeNull();
     });
   });
 

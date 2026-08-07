@@ -145,7 +145,7 @@ test("IME composing text on a focused empty list marker appears at the caret", a
   const caretEdge = await coordsAtPosLeft(page, 2);
   const client = await page.context().newCDPSession(page);
   await client.send("Input.imeSetComposition", { text: "あ", selectionStart: 1, selectionEnd: 1 });
-  await page.waitForTimeout(120);
+  await expect(page.locator("#editor .cm-line")).toContainText("あ");
 
   const composing = await composingCharRect(page, "あ");
   expect(composing.left).toBeGreaterThanOrEqual(caretEdge - 1);

@@ -1,0 +1,72 @@
+{
+  "observedAt": "2026-07-31",
+  "method": "Typed into a page in a personal Cosense project, with the caret on another line so every line rendered idle. Screenshots of the rendered screen were examined. No developer tools, network traffic, or scripts were inspected. The icon page was a real page with a profile image; its name was replaced with USER. The filler text placed around syntax during observation was replaced with ASCII; the syntax under observation remains as entered. An absent `facts` key was not observable from the screen; `null` means observed and absent.",
+  "location": "A scratch page in a personal Cosense project, deleted after the observation.",
+  "cases": [
+    {
+      "input": "[USER.icon]",
+      "observed": "One icon image, about one line of body text tall.",
+      "facts": { "kind": "icon", "isStrong": false, "repeatCount": 1 }
+    },
+    {
+      "input": "[USER.icon*2]",
+      "observed": "TWO icon images side by side, each the same size as the plain one. `*2` repeats the icon; it does not enlarge it.",
+      "facts": { "kind": "icon", "isStrong": false, "repeatCount": 2 }
+    },
+    {
+      "input": "[USER.icon*3]",
+      "observed": "Three icon images side by side, all the plain size.",
+      "facts": { "kind": "icon", "isStrong": false, "repeatCount": 3 }
+    },
+    {
+      "input": "[USER.iconx2]",
+      "observed": "Two icon images side by side. `x` separates a count just as `*` does.",
+      "facts": { "kind": "icon", "isStrong": false, "repeatCount": 2 }
+    },
+    {
+      "input": "[USER.iconx3]",
+      "observed": "Three icon images side by side, confirming `x` as a count separator rather than a coincidence at 2.",
+      "facts": { "kind": "icon", "isStrong": false, "repeatCount": 3 }
+    },
+    {
+      "input": "[[USER.icon]]",
+      "observed": "ONE icon, visibly LARGER than the plain form -- several lines of body text tall. The double bracket is what enlarges an icon.",
+      "facts": { "kind": "icon", "isStrong": true, "repeatCount": 1 }
+    },
+    {
+      "input": "[[USER.icon*2]]",
+      "observed": "Two of the enlarged icons side by side: the double bracket enlarges and `*2` still repeats.",
+      "facts": { "kind": "icon", "isStrong": true, "repeatCount": 2 }
+    },
+    {
+      "input": "[USER.icon*0]",
+      "observed": "No image. Red text reading USER.icon*0 -- the appearance of a link to a page that does not exist.",
+      "facts": { "kind": "link", "isStrong": false, "repeatCount": null }
+    },
+    {
+      "input": "[USER.icon*02]",
+      "observed": "No image. Red text reading USER.icon*02. A leading zero is not accepted as a count.",
+      "facts": { "kind": "link", "isStrong": false, "repeatCount": null }
+    },
+    {
+      "input": "[USER.ICON]",
+      "observed": "No image. Red text reading USER.ICON. Upper case is not an icon.",
+      "facts": { "kind": "link", "isStrong": false, "repeatCount": null }
+    },
+    {
+      "input": "[USER.Icon]",
+      "observed": "No image. Red text reading USER.Icon. Mixed case is not an icon either.",
+      "facts": { "kind": "link", "isStrong": false, "repeatCount": null }
+    },
+    {
+      "input": "[USER.icon*100]",
+      "observed": "Many plain-size icons wrapped across three lines, with no visible cutoff. The icons were not counted, so repeatCount was unobserved.",
+      "facts": { "kind": "icon", "isStrong": false }
+    },
+    {
+      "input": "table:t3\n\t[USER.icon]\tx",
+      "observed": "Inside a table cell, the icon rendered as an image beside the neighbouring cell's text.",
+      "facts": { "kind": "icon", "isStrong": false, "repeatCount": 1 }
+    }
+  ]
+}

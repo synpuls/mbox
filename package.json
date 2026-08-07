@@ -1,6 +1,6 @@
 {
   "name": "@synpuls/mbox",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "CodeMirror 6 based structured text editor with focused-line raw syntax editing.",
   "type": "module",
   "engines": {
@@ -68,7 +68,8 @@
     "bench:inline-code-highlight": "esbuild scripts/bench-inline-code-highlight.ts --bundle --platform=node --format=esm | node --input-type=module -",
     "preview": "vite preview --host 127.0.0.1",
     "knip": "knip",
-    "test": "vitest run --project unit --project dom",
+    "fixtures:github": "node scripts/update-github-markdown-fixture.mjs",
+    "test": "vitest run --project performance && vitest run --project unit --project dom",
     "test:demo": "vitest run --project demo",
     "test:layout": "playwright test",
     "test:coverage": "vitest run --project unit --project dom --coverage",
@@ -87,7 +88,8 @@
     "@types/mdast": "^4.0.4",
     "mdast-util-from-markdown": "^2.0.3",
     "mdast-util-gfm": "^3.1.0",
-    "micromark-extension-gfm": "^3.0.0"
+    "micromark-extension-gfm": "^3.0.0",
+    "micromark-util-decode-string": "^2.0.1"
   },
   "peerDependencies": {
     "@codemirror/autocomplete": "^6.20.3",

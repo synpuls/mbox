@@ -6,6 +6,22 @@ export interface InlineNotationKitRange {
   to: number;
 }
 
+/** The smallest document surface inline-notation lowering needs. */
+export type InlineNotationSource = string | { sliceString(from: number, to: number): string };
+
+/**
+ * CodeMirror plugins cannot replace a range containing a line break. Keep this
+ * decision beside the shared inline-notation reveal rule so a new caller
+ * cannot accidentally reintroduce the crash by forgetting a second guard.
+ *
+ * Temporary 8-pre behavior: leave multiline notation raw. Section 8A replaces
+ * this with the widget-plus-hidden-lines rendering model.
+ */
+export function canReplaceInlineNotation(range: InlineNotationKitRange, source: InlineNotationSource): boolean {
+  const text = typeof source === "string" ? source.slice(range.from, range.to) : source.sliceString(range.from, range.to);
+  return !text.includes("\n");
+}
+
 /**
  * Replaces `range` with a widget the caller's factory creates, on an inactive
  * line -- the reveal/hide rule shared by every inline notation (emoji, link,
@@ -15,9 +31,12 @@ export interface InlineNotationKitRange {
 export function createInactiveInlineNotationSpecs(
   range: InlineNotationKitRange,
   active: boolean,
+  source: InlineNotationSource,
   createWidget: () => WidgetType,
 ): MboxReplaceDecorationSpec[] {
-  return active ? [] : [{ type: "replace", from: range.from, to: range.to, widget: createWidget() }];
+  return active || !canReplaceInlineNotation(range, source)
+    ? []
+    : [{ type: "replace", from: range.from, to: range.to, widget: createWidget() }];
 }
 
 export interface AnchorElementOptions {

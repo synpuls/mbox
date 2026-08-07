@@ -1,0 +1,16 @@
+{
+  "fetchedAt": "2026-07-29T00:00:00+09:00",
+  "source": "https://scrapbox.io/api/pages/help-jp/%E6%95%B0%E5%BC%8F",
+  "statements": [
+    "[コードブロック]の言語名にcode:texもしくはcode:latexを指定する",
+    "1つの式を複数行にわけて書ける",
+    "行列や、複雑な式を書く時に便利"
+  ],
+  "languages": ["tex", "latex"],
+  "examples": [
+    {
+      "source": "code:tex\n \\begin{pmatrix}\n a & b & c \\\\ \n d & e & f \\\\ \n g & h & i \\\\ \n \\end{pmatrix}",
+      "expression": "\\begin{pmatrix}\na & b & c \\\\ \nd & e & f \\\\ \ng & h & i \\\\ \n\\end{pmatrix}"
+    }
+  ]
+}

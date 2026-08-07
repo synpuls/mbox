@@ -86,6 +86,22 @@ describe("hatenaTablePlugin", () => {
       ".mbox-hatena-table": { fontFamily: expect.stringMatching(/^var\(--mbox-table-font-family, .*monospace\)$/) },
     });
   });
+
+  it("applies computed widths to rendered cells and releases them on active raw cells", () => {
+    expect(hatenaTablePlugin().theme).toMatchObject({
+      ".mbox-hatena-table-cell": {
+        width: "var(--mbox-table-cell-width, var(--mbox-table-kit-column-width))",
+        maxWidth: "var(--mbox-table-kit-cell-max-width, 100%)",
+        minWidth: 0,
+        overflowWrap: "anywhere",
+      },
+      ".mbox-hatena-table-cell.mbox-hatena-table-raw-cell": {
+        width: "auto",
+        maxWidth: "none",
+        minWidth: "auto",
+      },
+    });
+  });
 });
 
 describe("hatenaTableClassNames", () => {

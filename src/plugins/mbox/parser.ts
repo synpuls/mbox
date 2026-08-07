@@ -5,6 +5,8 @@ import type {
   MboxInlineNode,
   MboxTableRow,
 } from "./types.js";
+import { findPipeOffsets } from "../pipe-table-row.js";
+import { createLogicalLines, type LogicalLine } from "../logical-lines.js";
 
 export function parseMboxDocument(input: string): MboxDocument {
   if (input.length === 0) {
@@ -13,27 +15,19 @@ export function parseMboxDocument(input: string): MboxDocument {
 
   const blocks: MboxBlock[] = [];
   const blockParsers = [parseCodeBlockAt, parseTableAt];
-  const lineStarts: number[] = [];
-  const lines = input.split("\n");
-
-  let offset = 0;
-  for (const line of lines) {
-    lineStarts.push(offset);
-    offset += line.length + 1;
-  }
+  const lines = createLogicalLines(input);
 
   for (let index = 0; index < lines.length; index += 1) {
-    const text = lines[index];
-    offset = lineStarts[index];
+    const line = lines[index];
 
-    const customBlock = parseBlockWithParsers(blockParsers, input, lines, lineStarts, index);
+    const customBlock = parseBlockWithParsers(blockParsers, input, lines, index);
     if (customBlock) {
       blocks.push(customBlock.block);
       index = customBlock.nextLineIndex;
       continue;
     }
 
-    blocks.push(parseLine(text, offset, index + 1));
+    blocks.push(parseLine(line.text, line.from, line.line));
   }
 
   return {
@@ -44,12 +38,11 @@ export function parseMboxDocument(input: string): MboxDocument {
 function parseBlockWithParsers(
   blockParsers: MboxBlockParser[],
   input: string,
-  lines: string[],
-  lineStarts: number[],
+  lines: LogicalLine[],
   lineIndex: number,
 ) {
   for (const blockParser of blockParsers) {
-    const result = blockParser({ input, lines, lineStarts, lineIndex });
+    const result = blockParser({ input, lines, lineIndex });
     if (result) {
       return result;
     }
@@ -58,19 +51,20 @@ function parseBlockWithParsers(
   return null;
 }
 
-const parseCodeBlockAt: MboxBlockParser = ({ input, lines, lineStarts, lineIndex: openingIndex }) => {
-  const openingText = lines[openingIndex];
+const parseCodeBlockAt: MboxBlockParser = ({ input, lines, lineIndex: openingIndex }) => {
+  const opening = lines[openingIndex];
+  const openingText = opening.text;
   if (!isCodeFenceLine(openingText)) {
     return null;
   }
 
-  const openingFrom = lineStarts[openingIndex];
-  const openingTo = openingFrom + openingText.length;
+  const openingFrom = opening.from;
+  const openingTo = opening.to;
   const contentFrom = openingTo < input.length ? openingTo + 1 : openingTo;
   let closingIndex = -1;
 
   for (let index = openingIndex + 1; index < lines.length; index += 1) {
-    if (isClosingCodeFenceLine(lines[index])) {
+    if (isClosingCodeFenceLine(lines[index].text)) {
       closingIndex = index;
       break;
     }
@@ -79,8 +73,8 @@ const parseCodeBlockAt: MboxBlockParser = ({ input, lines, lineStarts, lineIndex
   const closingFence =
     closingIndex >= 0
       ? {
-          from: lineStarts[closingIndex],
-          to: lineStarts[closingIndex] + lines[closingIndex].length,
+          from: lines[closingIndex].from,
+          to: lines[closingIndex].to,
         }
       : null;
   const contentTo = closingFence?.from ?? input.length;
@@ -97,9 +91,9 @@ const parseCodeBlockAt: MboxBlockParser = ({ input, lines, lineStarts, lineIndex
       },
       info: {
         from: openingFrom + 3,
-        to: openingTo,
+        to: openingFrom + openingText.length,
       },
-      infoValue: input.slice(openingFrom + 3, openingTo),
+      infoValue: openingText.slice(3),
       content: {
         from: contentFrom,
         to: contentTo,
@@ -119,19 +113,19 @@ function isClosingCodeFenceLine(text: string): boolean {
   return /^```\s*$/.test(text);
 }
 
-const parseTableAt: MboxBlockParser = ({ lines, lineStarts, lineIndex }) => {
-  const headerText = lines[lineIndex];
-  const delimiterText = lines[lineIndex + 1];
+const parseTableAt: MboxBlockParser = ({ lines, lineIndex }) => {
+  const headerText = lines[lineIndex].text;
+  const delimiterText = lines[lineIndex + 1]?.text;
   if (delimiterText == null || !isTableRowLine(headerText) || !isTableDelimiterLine(delimiterText)) {
     return null;
   }
 
-  const header = parseTableRow(headerText, lineStarts[lineIndex]);
+  const header = parseTableRow(headerText, lines[lineIndex].from);
   if (!header || header.cells.length === 0) {
     return null;
   }
 
-  const delimiter = parseTableDelimiter(delimiterText, lineStarts[lineIndex + 1]);
+  const delimiter = parseTableDelimiter(delimiterText, lines[lineIndex + 1].from);
   if (!delimiter || delimiter.cells.length !== header.cells.length) {
     return null;
   }
@@ -139,11 +133,11 @@ const parseTableAt: MboxBlockParser = ({ lines, lineStarts, lineIndex }) => {
   const rows: MboxTableRow[] = [];
   let lastLineIndex = lineIndex + 1;
   for (let index = lineIndex + 2; index < lines.length; index += 1) {
-    if (!isTableRowLine(lines[index])) {
+    if (!isTableRowLine(lines[index].text)) {
       break;
     }
 
-    const row = parseTableRow(lines[index], lineStarts[index]);
+    const row = parseTableRow(lines[index].text, lines[index].from);
     if (!row) {
       break;
     }
@@ -155,8 +149,8 @@ const parseTableAt: MboxBlockParser = ({ lines, lineStarts, lineIndex }) => {
   return {
     block: {
       type: "table",
-      from: lineStarts[lineIndex],
-      to: lineStarts[lastLineIndex] + lines[lastLineIndex].length,
+      from: lines[lineIndex].from,
+      to: lines[lastLineIndex].to,
       line: lineIndex + 1,
       header,
       delimiter,
@@ -181,7 +175,7 @@ function parseTableDelimiter(text: string, offset: number): MboxTableRow | null 
 }
 
 function parseTableRow(text: string, offset: number): MboxTableRow | null {
-  const pipeIndexes = [...text].flatMap((character, index) => (character === "|" ? [index] : []));
+  const pipeIndexes = findPipeOffsets(text);
   if (pipeIndexes.length === 0) {
     return null;
   }
@@ -958,6 +952,8 @@ function parseIconAt(
     return null;
   }
 
+  // This mbox-only notation intentionally matches case-insensitively; Scrapbox
+  // notation has a separate, lowercase-only contract.
   const iconSuffix = ".icon";
   if (!content.toLowerCase().endsWith(iconSuffix) || content.length === iconSuffix.length) {
     return null;

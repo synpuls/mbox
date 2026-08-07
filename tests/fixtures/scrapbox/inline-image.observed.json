@@ -1,0 +1,47 @@
+{
+  "observedAt": "2026-07-31",
+  "method": "Typed into a page in a personal Cosense project, with the caret on another line so every line rendered idle. Screenshots of the rendered screen were examined. No developer tools, network traffic, or scripts were inspected. Two sessions: the first recorded what rendered, the second re-entered three of the bracketed forms and read each image's destination from the browser's status bar on hover. `linkTarget` is present only for those three; it is absent elsewhere because it was not observed. An absent `facts` key means unobserved; `null` means observed and absent. The filler text placed around syntax during observation was replaced with ASCII; the syntax under observation remains as entered.",
+  "location": "Scratch pages in a personal Cosense project, deleted after each session.",
+  "cases": [
+    {
+      "input": "[https://placehold.jp/150[x150.png]",
+      "observed": "A 150x150 placeholder image rendered. A `[` inside the URL did not stop it being image notation.",
+      "facts": { "isImage": true, "isStrong": false }
+    },
+    {
+      "input": "[https://.png]",
+      "observed": "A broken-image glyph, not link-coloured text. It was taken as image notation; the URL simply does not load.",
+      "facts": { "isImage": true, "isStrong": false }
+    },
+    {
+      "input": "[[https://placehold.jp/150x150.png https://example.com/page]]",
+      "observed": "A 150x150 image, the same size as the single-bracket form below it. Unlike icons, the double bracket did not enlarge it -- no visible difference from the plain form. Hovering the image showed https://example.com/page: the destination is the second URL, not the picture.",
+      "facts": { "isImage": true, "isStrong": false, "linkTarget": "https://example.com/page" }
+    },
+    {
+      "input": "[https://placehold.jp/150x150.png https://example.com/page]",
+      "observed": "A 150x150 image, indistinguishable in size from the double-bracket form above, and hovering showed the same https://example.com/page. The two bracket forms agree on where they go.",
+      "facts": { "isImage": true, "isStrong": false, "linkTarget": "https://example.com/page" }
+    },
+    {
+      "input": "[https://placehold.jp/150x150.png]",
+      "observed": "A 150x150 image with nowhere to go: hovering produced no destination in the status bar. One URL on its own is a picture, not a link.",
+      "facts": { "isImage": true, "isStrong": false, "linkTarget": null }
+    },
+    {
+      "input": "table:t\n\t[[https://placehold.jp/150x150.png https://example.com/page]]\tx\n\ty\tz",
+      "observed": "The table rendered, but the cell showed the notation as raw text: no image at all.",
+      "facts": { "isImage": false, "isStrong": false }
+    },
+    {
+      "input": "table:t2\n\t[https://placehold.jp/150x150.png]\tx",
+      "observed": "Raw text in the cell again. It is not only the two-element form that a table cell refuses -- a plain bracketed image URL does not render either.",
+      "facts": { "isImage": false, "isStrong": false }
+    },
+    {
+      "input": "table:t2\n\t[https://placehold.jp/150x150.png https://example.com/page]\ty",
+      "observed": "Raw text in the cell. Every image-URL form tried inside a table cell stayed text.",
+      "facts": { "isImage": false, "isStrong": false }
+    }
+  ]
+}

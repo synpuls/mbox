@@ -104,6 +104,18 @@ describe("createTableSpecs", () => {
     );
   });
 
+  it("reserves two ch units for each full-width Japanese character", () => {
+    const specs = tableSpecs("| 日本 | B |\n| --- | --- |\n| A | C |");
+    expect(specs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        from: 2,
+        to: 4,
+        className: tableClassNames.cell,
+        attributes: expect.objectContaining({ style: expect.stringContaining("--mbox-table-kit-column-width: 4ch") }),
+      }),
+    ]));
+  });
+
   it("adds column width attributes by row column index when body rows have extra cells", () => {
     const specs = tableSpecs("| A | B |\n| --- | --- |\n| 1 | long long long | tail |");
 
@@ -298,6 +310,22 @@ describe("tablePlugin", () => {
     expect(tablePlugin().theme).toMatchObject({
       [`.${tableClassNames.table}`]: {
         fontFamily: expect.stringMatching(/^var\(--mbox-table-font-family, .*monospace\)$/),
+      },
+    });
+  });
+
+  it("applies computed widths to rendered cells and releases them on active raw cells", () => {
+    expect(tablePlugin().theme).toMatchObject({
+      [`.${tableClassNames.cell}`]: {
+        width: "var(--mbox-table-cell-width, var(--mbox-table-kit-column-width))",
+        maxWidth: "var(--mbox-table-kit-cell-max-width, 100%)",
+        minWidth: 0,
+        overflowWrap: "anywhere",
+      },
+      [`.${tableClassNames.cell}.${tableClassNames.rawCell}`]: {
+        width: "auto",
+        maxWidth: "none",
+        minWidth: "auto",
       },
     });
   });

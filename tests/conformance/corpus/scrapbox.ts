@@ -14,4 +14,7 @@ export const scrapboxDecorationCorpus: readonly DecorationCorpusCase[] = [
   { name: "quotes", doc: "> quoted line\n>bare" },
   { name: "formulas", doc: "[$ x^2 + y^2 ] inline\n$ a\n$ b" },
   { name: "table", doc: "table:t\n a\tb\n c\td\nafter" },
+  // The namespace-specific DOM tests pin which parts render. This smallest
+  // mixed row keeps the reported Scrapbox table-cell case in the shared corpus.
+  { name: "table-cell link, image, and formula", doc: "table:t\n [12345]\t[https://example.com/i.png]\t[$ x^2]" },
 ];

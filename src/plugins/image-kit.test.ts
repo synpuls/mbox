@@ -25,6 +25,7 @@ describe("createImageKitSpecs", () => {
     createImageKitSpecs(
       [{ from: 1, to: 8, src: "image.png", alt: "Alt", text: "Alt" }],
       false,
+      "  image.png",
       classNames,
       measureClassNames,
       "token",
@@ -43,6 +44,7 @@ describe("createImageKitSpecs", () => {
     const [spec] = createImageKitSpecs(
       [{ from: 1, to: 8, src: "image.png", alt: "Alt", text: "Alt" }],
       true,
+      "  image.png",
       classNames,
       measureClassNames,
       "preview",
@@ -57,6 +59,20 @@ describe("createImageKitSpecs", () => {
       createImageKitSpecs(
         [{ from: 1, to: 8, src: "image.png", alt: "Alt", text: "Alt" }],
         true,
+        "  image.png",
+        classNames,
+        measureClassNames,
+        "token",
+      ),
+    ).toEqual([]);
+  });
+
+  it("leaves an inactive image raw when its source range spans a line break", () => {
+    expect(
+      createImageKitSpecs(
+        [{ from: 0, to: 10, src: "image.png", alt: "Alt", text: "Alt" }],
+        false,
+        "![alt\n](x)",
         classNames,
         measureClassNames,
         "token",

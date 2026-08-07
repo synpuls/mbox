@@ -86,8 +86,8 @@ export const scrapboxIndentLevelWidth = 1.5;
 const scrapboxBulletSlotWidth = scrapboxIndentLevelWidth;
 
 /**
- * Diameter of the bullet dot, in em. Real Scrapbox paints a 6px dot on a 15px
- * line font — 0.4em; a smaller dot reads as too faint next to the item text.
+ * Diameter of the bullet dot, in em. 0.4em is a 6px dot at a 15px line font;
+ * a smaller dot reads as too faint next to the item text.
  */
 const scrapboxBulletDotSize = 0.4;
 
@@ -112,9 +112,9 @@ export interface ScrapboxListClassNames {
  * that occupies no inline width, so it can never shift the text either.
  *
  * Unlike the other scrapbox plugins, the bullet is kept on the active
- * (focused) line too: it hides no syntax, so — as in real Scrapbox — the dot
- * stays visible while the cursor is on the line. Only code and table blocks are
- * skipped.
+ * (focused) line too: it hides no syntax, so there is nothing to reveal and
+ * the dot stays visible while the cursor is on the line. Only code and table
+ * blocks are skipped.
  */
 function createScrapboxListSpecs(
   document: ScrapboxDocument,
@@ -207,8 +207,8 @@ export function scrapboxListPlugin(): MboxPlugin {
       },
       // Each indent level is a fixed-width inline-block box painted in place of a
       // raw space. The innermost box is the narrower bullet slot (its width is
-      // the dot-left-edge-to-text distance, 1.0em, matching real Scrapbox); the
-      // outer boxes are full 1.5em indent steps.
+      // the dot-left-edge-to-text distance, 1.0em); the outer boxes are full
+      // 1.5em indent steps.
       // `line-height: normal` keeps each box only as tall as the font's natural
       // height, not the editor's expanded line-height. Without it the inline-block
       // box grows to the full line box, and a caret parked at the line start

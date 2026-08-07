@@ -5,7 +5,12 @@ import {
   createMboxExtension,
   editorPresentationTheme,
 } from "mbox";
-import { scrapboxDefaultPresentationTheme, scrapboxPlugins, type ScrapboxRecommend } from "mbox/scrapbox";
+import {
+  scrapboxDefaultPresentationTheme,
+  scrapboxPlugins,
+  type ScrapboxFormulaRenderer,
+  type ScrapboxRecommend,
+} from "mbox/scrapbox";
 
 // The same placeholder image the other demos use (imported as a Vite asset so
 // the path respects the build's `base`), but Scrapbox image notation only
@@ -94,12 +99,13 @@ const demoTitles = ["demo-user", "readme", "reference", "roadmap", "recipes", "R
 const recommendDemoTitles: ScrapboxRecommend = (query) =>
   demoTitles.filter((title) => title.toLowerCase().startsWith(query.toLowerCase())).map((title) => ({ title }));
 
-export function demoRenderFormula(expression: string): HTMLElement {
+export const demoRenderFormula: ScrapboxFormulaRenderer = (expression) => {
   const element = document.createElement("span");
   element.className = "demo-formula";
   element.innerHTML = katex.renderToString(`\\displaystyle ${expression}`, { throwOnError: false });
   return element;
-}
+};
+demoRenderFormula.providesAccessibleMath = true;
 
 const demoTheme = EditorView.theme({
   // Tint quote lines so the feature is visible in the demo. The value is kept
@@ -145,44 +151,6 @@ const demoTheme = EditorView.theme({
     fontWeight: "600",
   },
   ".mbox-scrapbox-table-opener": { color: "#57606a" },
-  // Mirrors mbox/gfm's own table grid look (see demos/styles.css's
-  // .mbox-table-cell/.mbox-gfm-table-cell), kept here instead since every
-  // other scrapbox-specific visual choice in this demo already lives in this
-  // theme rather than the shared stylesheet.
-  ".mbox-scrapbox-table-cell": {
-    boxSizing: "border-box",
-    display: "inline-block",
-    "--mbox-scrapbox-table-column-extra-width": "5ch",
-    width: "calc(var(--mbox-table-kit-column-width) + var(--mbox-scrapbox-table-column-extra-width))",
-    maxWidth: "var(--mbox-table-kit-cell-max-width, 100%)",
-    background: "rgba(248, 250, 252, 0.58)",
-    boxShadow: "inset 0 0 0 1px rgba(203, 213, 225, 0.76)",
-    overflowWrap: "anywhere",
-    paddingInline: "1ch",
-    verticalAlign: "top",
-  },
-  ".mbox-scrapbox-table-raw-cell": {
-    background: "transparent",
-    boxShadow: "none",
-    display: "inline",
-    maxWidth: "none",
-    overflowWrap: "normal",
-    paddingInline: "0",
-    width: "auto",
-  },
-  ".mbox-scrapbox-table-rendered": {
-    alignItems: "stretch",
-    display: "flex",
-    whiteSpace: "pre-wrap",
-  },
-  ".mbox-scrapbox-table-rendered .mbox-scrapbox-table-cell": {
-    flex: "0 1 calc(var(--mbox-table-kit-column-width) + var(--mbox-scrapbox-table-column-extra-width))",
-    minWidth: "0",
-  },
-  ".mbox-scrapbox-table-header .mbox-scrapbox-table-cell": {
-    background: "rgba(241, 245, 249, 0.7)",
-    fontWeight: "600",
-  },
   // Sizing/alignment comes from the link plugin's core theme (keeps the icon at
   // one text em with no layout shift on focus); the demo only rounds the avatar.
   ".mbox-scrapbox-icon-image": { borderRadius: "50%" },
@@ -215,8 +183,8 @@ export function createScrapboxDemoEditorState() {
           // The library only hands over the raw name; the consumer owns every
           // URL. `iconUrl` builds the avatar image, `pageUrl` the link href —
           // both from the raw text and reused across notations. A real host
-          // would map the name to its avatar endpoint (on scrapbox.io:
-          // `/api/pages/<project>/<name>/icon`); the demo has no backend, so
+          // would map the name to whatever avatar endpoint its own backend
+          // exposes; the demo has no backend, so
           // it maps names to local files instead -- Vite resolves this dynamic
           // `new URL(..., import.meta.url)` to the bundled ./icons/*.png
           // assets. Unknown names 404 and fall back to the alt text.

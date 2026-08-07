@@ -24,4 +24,10 @@ describe("gfmLinkPlugin", () => {
     expect((specs[0] as unknown as { widget: GfmLinkWidget }).widget.href).toBe("path");
     expect(specsFor("[label](path)", {}, [1])).toEqual([]);
   });
+
+  it("uses the recursively projected label text rather than literal inline markers", () => {
+    const specs = specsFor("[*em* label](url)");
+
+    expect((specs[0] as unknown as { widget: GfmLinkWidget }).widget.text).toBe("em label");
+  });
 });

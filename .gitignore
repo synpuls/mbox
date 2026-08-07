@@ -18,3 +18,9 @@ coverage/
 /scrapbox-parser
 /xatena-go
 /.dev
+
+# Working notes: planning, audits and decision logs. One directory rather than
+# a line per file, so nothing has to be added here as they accumulate and no
+# filename ends up published. Never in the package either -- see the `files`
+# field in package.json.
+/dev-docs/

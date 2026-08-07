@@ -64,7 +64,9 @@ describe("createCodeBlockSpecs", () => {
 });
 
 describe("codeBlockHighlightPlugin", () => {
-  it("adds token classes in the editor view while fence markers are hidden", () => {
+  it("adds token classes in the editor view while fence markers are hidden after CodeMirror's LF normalization", () => {
+    // CRLF parser behavior is covered by parser.crlf.test.ts: EditorState
+    // normalizes \r\n to \n before this integrated editor path can parse it.
     const parent = document.createElement("div");
     const view = createEditorView({
       parent,

@@ -3,11 +3,11 @@ import type { HatenaDocument } from "./parser.js";
 import { hatenaDecorationProvider } from "./shared.js";
 
 // Definition lists: `:用語:説明` (a term + description) and `::説明` (a
-// continuation description). Real Hatena renders these as `<dl><dt><dd>`, one
-// `<dd>` per `::`, stacked vertically: the term (dt) sits on its own row and the
-// description (dd) drops to the next row, indented. mbox reproduces that stacking
+// continuation description). The notation is a definition list -- a term with
+// one or more descriptions under it, one per `::`. mbox stacks them vertically
 // within a single source line by rendering the term as a block, so the
-// description flows onto the next visual row; a `::` line is a bare indented dd.
+// description flows onto the next visual row; a `::` line is a bare indented
+// description.
 // The reveal model hides the `:` markers on inactive lines and shows the raw
 // colons on the active line for editing.
 export const hatenaDefinitionLineClassName = "mbox-hatena-deflist";

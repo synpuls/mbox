@@ -8,7 +8,41 @@ import {
   getCodeBlockKitLanguage,
   getCodeBlockKitLanguageForFileName,
   getCodeBlockKitLanguageLabelRange,
+  parseCodeBlockKitFileName,
+  parseCodeBlockKitInfoString,
 } from "./code-block-kit.js";
+
+describe("parseCodeBlockKitInfoString", () => {
+  it.each([
+    ["ts", { value: "ts", from: 0, to: 2 }],
+    [" ts ", { value: "ts", from: 1, to: 3 }],
+    [' \t  ts\t title="x"', { value: "ts", from: 4, to: 6 }],
+    [" \t😀ts \tmetadata", { value: "😀ts", from: 2, to: 6 }],
+    ['ts title="x"', { value: "ts", from: 0, to: 2 }],
+    ["unknownlang", { value: "unknownlang", from: 0, to: 11 }],
+    ["", null],
+    [" \t", null],
+    ["ts\r", null],
+    ["ts\n", null],
+    ["ts\rfoo", null],
+    ["\r", null],
+  ])("accepts or rejects %j at the info-string boundary", (infoValue, expected) => {
+    expect(parseCodeBlockKitInfoString(infoValue)).toEqual(expected);
+  });
+});
+
+describe("parseCodeBlockKitFileName", () => {
+  it.each([
+    ["a.ts", "a.ts"],
+    ["my file.ts", "my file.ts"],
+    [" a.ts\t", "a.ts"],
+    ["a.ts\r", null],
+    ["a.ts\n", null],
+    ["my\rfile.ts", null],
+  ])("accepts or rejects %j without splitting a filename", (fileName, expected) => {
+    expect(parseCodeBlockKitFileName(fileName)).toEqual(expected);
+  });
+});
 
 describe("getCodeBlockKitLanguage", () => {
   it("resolves a bare language id to its LRLanguage", () => {
@@ -20,8 +54,16 @@ describe("getCodeBlockKitLanguage", () => {
     expect(getCodeBlockKitLanguage("jsx")).toBe(javascriptLanguage);
   });
 
-  it("only considers the first whitespace-separated token", () => {
-    expect(getCodeBlockKitLanguage('typescript title="demo"')).toBe(typescriptLanguage);
+  it.each(["ts", " ts", "ts ", " ts ", "\tts"])('resolves %j with permitted leading or trailing horizontal whitespace', (infoValue) => {
+    expect(getCodeBlockKitLanguage(infoValue)).toBe(typescriptLanguage);
+  });
+
+  it.each(["ts extra", " ts extra"])('only considers the first token of %j', (infoValue) => {
+    expect(getCodeBlockKitLanguage(infoValue)).toBe(typescriptLanguage);
+  });
+
+  it.each(["ts\r", "ts\n", " ts\r"])('rejects a parser-facing info string containing a line terminator: %j', (infoValue) => {
+    expect(getCodeBlockKitLanguage(infoValue)).toBeNull();
   });
 
   it("falls back to the file extension when the id itself is unsupported", () => {
@@ -160,6 +202,16 @@ describe("getCodeBlockKitLanguageLabelRange", () => {
   it("returns null for an info string with no non-whitespace token", () => {
     expect(getCodeBlockKitLanguageLabelRange("", 3)).toBeNull();
     expect(getCodeBlockKitLanguageLabelRange("   ", 3)).toBeNull();
+  });
+
+  it("projects the syntax contract: unknown tokens keep a label, while rejected terminators have neither label nor language", () => {
+    expect(getCodeBlockKitLanguageLabelRange("unknownlang", 10)).toEqual({ from: 10, to: 21 });
+    expect(getCodeBlockKitLanguage("unknownlang")).toBeNull();
+
+    for (const infoValue of ["ts\r", "ts\n", "ts\rfoo"]) {
+      expect(getCodeBlockKitLanguageLabelRange(infoValue, 10)).toBeNull();
+      expect(getCodeBlockKitLanguage(infoValue)).toBeNull();
+    }
   });
 });
 

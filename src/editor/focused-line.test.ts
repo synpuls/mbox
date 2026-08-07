@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { EditorSelection, EditorState } from "@codemirror/state";
 import {
+  clearPointerLease,
   getActiveLineNumbersFromState,
   getActiveLineNumbersFromView,
+  pointerLeaseField,
+  setPointerLease,
 } from "./focused-line.js";
 
 describe("getActiveLineNumbersFromState", () => {
@@ -79,5 +82,39 @@ describe("getActiveLineNumbersFromView", () => {
     });
 
     expect(getActiveLineNumbersFromView({ state, hasFocus: true })).toEqual(new Set([1, 2, 3]));
+  });
+
+  it("keeps a pointer-leased selection line rendered until that pointer releases it", () => {
+    const initial = EditorState.create({
+      doc: "one\ntwo\nthree",
+      selection: EditorSelection.cursor(5),
+      extensions: [pointerLeaseField],
+    });
+    const leased = initial.update({ effects: setPointerLease.of({ pointerId: 7, lineNumber: 2 }) }).state;
+
+    const alsoLeased = leased.update({ effects: setPointerLease.of({ pointerId: 8, lineNumber: 3 }) }).state;
+
+    expect(getActiveLineNumbersFromView({ state: alsoLeased, hasFocus: true })).toEqual(new Set());
+
+    const ignored = alsoLeased.update({ effects: clearPointerLease.of(9) }).state;
+    expect(getActiveLineNumbersFromView({ state: ignored, hasFocus: true })).toEqual(new Set());
+
+    const released = ignored.update({ effects: clearPointerLease.of(7) }).state;
+    expect(getActiveLineNumbersFromView({ state: released, hasFocus: true })).toEqual(new Set([2]));
+  });
+
+  it("keeps every leased line rendered alongside multiple selections", () => {
+    const state = EditorState.create({
+      doc: "one\ntwo\nthree",
+      selection: EditorSelection.create([EditorSelection.cursor(1), EditorSelection.cursor(9)]),
+      extensions: [EditorState.allowMultipleSelections.of(true), pointerLeaseField],
+    }).update({
+      effects: [
+        setPointerLease.of({ pointerId: 1, lineNumber: 1 }),
+        setPointerLease.of({ pointerId: 2, lineNumber: 3 }),
+      ],
+    }).state;
+
+    expect(getActiveLineNumbersFromView({ state, hasFocus: true })).toEqual(new Set());
   });
 });

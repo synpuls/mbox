@@ -1,0 +1,8 @@
+{
+  "source": "https://api.github.com/markdown",
+  "method": "POST https://api.github.com/markdown, body {\"text\": <markdown>, \"mode\": \"gfm\"}, unauthenticated",
+  "markdown": "A footnote reference.[^note]\n\n[^note]: **bold** and `code` and a [plain link](https://example.com)",
+  "html": "<p>A footnote reference.<sup><a href=\"#user-content-fn-note-0728fc6f8106199de25d9a40c8c9f6ec\" id=\"user-content-fnref-note-0728fc6f8106199de25d9a40c8c9f6ec\" data-footnote-ref=\"\" aria-describedby=\"footnote-label\">1</a></sup></p>\n<section data-footnotes=\"\" class=\"footnotes\"><h2 id=\"footnote-label\" class=\"sr-only\">Footnotes</h2>\n<ol>\n<li id=\"user-content-fn-note-0728fc6f8106199de25d9a40c8c9f6ec\">\n<p><strong>bold</strong> and <code class=\"notranslate\">code</code> and a <a href=\"https://example.com\">plain link</a> <a href=\"#user-content-fnref-note-0728fc6f8106199de25d9a40c8c9f6ec\" data-footnote-backref=\"\" aria-label=\"Back to reference 1\" class=\"data-footnote-backref\">↩</a></p>\n</li>\n</ol>\n</section>",
+  "fetchedAt": "2026-07-30T16:42:23.652Z",
+  "githubApiVersion": "2022-11-28"
+}

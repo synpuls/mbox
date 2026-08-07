@@ -9,6 +9,9 @@ jobs:
   # Full quality gate on the primary development Node.
   test:
     runs-on: ubuntu-latest
+    # Local package gate is about 8.5s; 15 minutes leaves CI/setup headroom
+    # while ensuring a runaway synchronous guard stops at a known boundary.
+    timeout-minutes: 15
     steps:
       # Pinned to immutable commits; Dependabot updates these by reviewed PR.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -35,6 +38,9 @@ jobs:
   # The dev toolchain floor is Node 20.19 (vite 7); 22 is covered by `test`.
   node-matrix:
     runs-on: ubuntu-latest
+    # Local package gate is about 8.5s; 15 minutes leaves CI/setup headroom
+    # while ensuring a runaway synchronous guard stops at a known boundary.
+    timeout-minutes: 15
     strategy:
       matrix:
         node: [20, 24]
@@ -53,6 +59,9 @@ jobs:
   # packed dist imports and runs its pure API there.
   node18-consumer:
     runs-on: ubuntu-latest
+    # This build-and-smoke job is small, but shares the same bounded-failure
+    # policy as the other CI jobs and has generous setup headroom.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -68,6 +77,9 @@ jobs:
 
   layout:
     runs-on: ubuntu-latest
+    # The local three-engine suite takes about 56s; 20 minutes leaves room for
+    # browser installation and slower CI while bounding a runaway job.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4

@@ -27,4 +27,13 @@ describe("package entry", () => {
     });
     expect(packageJson.files).toEqual(["dist", "README.md", "LICENSE", "docs/guide.md"]);
   });
+
+  it("documents the supported table-width override and its selector compatibility change", () => {
+    const guide = readFileSync(resolve(process.cwd(), "docs/guide.md"), "utf8");
+
+    expect(guide).toContain("--mbox-table-cell-width");
+    expect(guide).toMatch(/#editor\s*\{\s*--mbox-table-cell-width:\s*30ch;\s*\}/);
+    expect(guide).toContain(".mbox-table-cell { width:");
+    expect(guide).toContain("specificity");
+  });
 });

@@ -113,11 +113,10 @@ export const scrapboxDefaultPresentationThemeSpec: MboxThemeSpec = {
   [`.${scrapboxBulletClassName}::after`]: {
     background: "var(--mbox-scrapbox-bullet-color, #57606a)",
   },
-  // Real Scrapbox's title (its page's first line) measures ~1.73x a normal
-  // line's font size (25.95px vs 15px, checked directly against a live page).
-  // Its own line box is ~63px tall -- taller than font-size*line-height alone
-  // accounts for (~48.5px) -- so ~0.8em of its own font-size is genuinely
-  // extra room before the body, not just font scaling. The extra room is
+  // The title line (a document's first line) is set at ~1.73x a normal line's
+  // font size, with ~0.8em of its own font-size as extra room before the body
+  // starts -- enough that the title reads as a heading rather than as a large
+  // first paragraph. The extra room is
   // line-height/padding, not margin, so it stays part of the line box
   // CodeMirror measures (no focus/unfocus height jump -- the same reasoning
   // as Hatena's heading padding, see hatena's own presentation theme).

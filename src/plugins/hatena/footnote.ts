@@ -1,13 +1,13 @@
 import { WidgetType } from "@codemirror/view";
 import type { MboxDecorationSpec, MboxPlugin } from "../../editor/plugin.js";
 import type { HatenaDocument } from "./parser.js";
-import { hatenaDecorationProvider } from "./shared.js";
+import { getHatenaDocumentFromState } from "./parser-cache.js";
 import { createInactiveInlineNotationSpecs } from "../inline-notation-kit.js";
 
-// Inline footnotes `((content))`. Real Hatena hoists them into a numbered list at
-// the article end and leaves a superscript `*N` reference in the text. mbox is a
-// line-oriented editor with no "article end" to append to, so it keeps the number
-// INLINE: an idle `((content))` collapses to a superscript `*N` whose tooltip is
+// Inline footnotes `((content))`. The notation collects them into a numbered
+// list at the article end, leaving a superscript `*N` reference in the text.
+// mbox is a line-oriented editor with no "article end" to append to, so it
+// keeps the number INLINE: an idle `((content))` collapses to a superscript `*N` whose tooltip is
 // the content (the same tooltip-only treatment as the gfm footnote chip). The raw
 // `((content))` returns on the active line for editing.
 export const hatenaFootnoteClassName = "mbox-hatena-footnote";
@@ -42,7 +42,11 @@ export class HatenaFootnoteWidget extends WidgetType {
   }
 }
 
-function createHatenaFootnoteSpecs(document: HatenaDocument, activeLines: Set<number>): MboxDecorationSpec[] {
+function createHatenaFootnoteSpecs(
+  document: HatenaDocument,
+  source: string | { sliceString(from: number, to: number): string },
+  activeLines: Set<number>,
+): MboxDecorationSpec[] {
   return document.lines.flatMap((line) => {
     if (line.footnotes.length === 0) {
       return [];
@@ -53,7 +57,7 @@ function createHatenaFootnoteSpecs(document: HatenaDocument, activeLines: Set<nu
     return [
       { type: "line", from: line.from, className: hatenaFootnoteLineClassName },
       ...line.footnotes.flatMap((footnote) =>
-        createInactiveInlineNotationSpecs(footnote.marker, active, () => new HatenaFootnoteWidget(footnote.number, footnote.text)),
+        createInactiveInlineNotationSpecs(footnote.marker, active, source, () => new HatenaFootnoteWidget(footnote.number, footnote.text)),
       ),
     ];
   });
@@ -81,6 +85,6 @@ export function hatenaFootnotePlugin(): MboxPlugin {
       [`.${hatenaFootnoteLineClassName}`]: { lineHeight: "1.5" },
     },
     name: "hatena/footnote",
-    decorations: hatenaDecorationProvider(createHatenaFootnoteSpecs),
+    decorations: (context) => createHatenaFootnoteSpecs(getHatenaDocumentFromState(context.state), context.state.doc, context.activeLineNumbers),
   };
 }

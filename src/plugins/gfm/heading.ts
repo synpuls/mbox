@@ -1,13 +1,13 @@
-import type { MboxDecorationSpec, MboxPlugin } from "../../editor/plugin.js";
+import type { MboxDecorationSpec, MboxPlugin, MboxThemeSpec } from "../../editor/plugin.js";
 import type { GfmDocument } from "./parser.js";
 import { getGfmDocumentFromState } from "./parser-cache.js";
 
-// ATX headings, presented the way the mbox notation presents its own: an
-// unfocused heading is FLUSH LEFT — hiding `# ` moves the content to the line
-// start, and the sideways shift when focus reveals the raw marker is an accepted
-// part of the presentation (contrast lists, where a fixed-width slot keeps every
-// line stable). No marker width is reserved.
+// Headings are presented flush left: an unfocused ATX heading hides `# `, and an
+// unfocused setext heading hides its physical underline line. The sideways shift
+// when focus reveals raw source is accepted (contrast lists, where a fixed-width
+// slot keeps every line stable). No marker width is reserved.
 export const gfmHeadingLineClassName = "mbox-gfm-heading";
+export const gfmHeadingSetextUnderlineClassName = "mbox-gfm-heading-setext-underline";
 export const gfmHeadingClassNames = {
   h1: "mbox-gfm-h1",
   h2: "mbox-gfm-h2",
@@ -21,15 +21,25 @@ const gfmHeadingLevelClassName = (level: number): string =>
 
 function createGfmHeadingSpecs(document: GfmDocument, activeLines: Set<number>): MboxDecorationSpec[] {
   return document.headings.flatMap((heading) => {
-    const isActive = activeLines.has(heading.line);
+    const isActive = activeLines.has(heading.line) || (heading.setextUnderline !== undefined && activeLines.has(heading.setextUnderline.line));
     const levelClassName = gfmHeadingLevelClassName(heading.level);
     const markerWidth = heading.marker.to - heading.marker.from;
 
-    // A setext heading (`Title` / `=====`) has no `#` marker — mdast reports its
-    // marker range as zero width because the underline lives on the NEXT line and
-    // there is no primitive to hide a whole line. We style the TEXT line like a
-    // heading and leave the underline visible as a literal (documented in index.ts).
-    if (isActive || markerWidth === 0) {
+    if (heading.setextUnderline !== undefined) {
+      const specs: MboxDecorationSpec[] = [
+        {
+          type: "line",
+          from: heading.from,
+          className: `${gfmHeadingLineClassName} ${levelClassName}`,
+        },
+      ];
+      if (!isActive) {
+        specs.push({ type: "line", from: heading.setextUnderline.from, className: gfmHeadingSetextUnderlineClassName });
+      }
+      return specs;
+    }
+
+    if (isActive) {
       const specs: MboxDecorationSpec[] = [
         {
           type: "line",
@@ -52,9 +62,14 @@ function createGfmHeadingSpecs(document: GfmDocument, activeLines: Set<number>):
   });
 }
 
+const gfmHeadingTheme: MboxThemeSpec = {
+  [`.${gfmHeadingSetextUnderlineClassName}`]: { display: "none" },
+};
+
 export function gfmHeadingPlugin(): MboxPlugin {
   return {
     name: "gfm/heading",
+    theme: gfmHeadingTheme,
     decorations: (context) => createGfmHeadingSpecs(getGfmDocumentFromState(context.state), context.activeLineNumbers),
   };
 }

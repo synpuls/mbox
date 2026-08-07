@@ -1,8 +1,25 @@
 import { describe, expect, it } from "vitest";
 import { parseMboxDocument } from "./parser.js";
+import { getCodeBlockKitLanguage } from "../code-block-kit.js";
 
 describe("parseMboxDocument (fenced-code)", () => {
   describe("fenced-code", () => {
+    it("removes a CRLF terminator from a fenced code block info string", () => {
+      const [block] = parseMboxDocument("```ts\r\nconst a = 1\r\n```").blocks;
+
+      expect(block).toMatchObject({
+        type: "codeBlock",
+        infoValue: "ts",
+        value: "const a = 1\r\n",
+      });
+    });
+
+    it("resolves highlighter language from a CRLF fenced code block info string", () => {
+      const [block] = parseMboxDocument("```ts\r\nconst a = 1\r\n```").blocks;
+
+      expect(block?.type === "codeBlock" && getCodeBlockKitLanguage(block.infoValue)).not.toBeNull();
+    });
+
     it("parses a fenced code block with marker and content ranges", () => {
       expect(parseMboxDocument("```ts\nconst value = [Page]\n```")).toEqual({
         blocks: [

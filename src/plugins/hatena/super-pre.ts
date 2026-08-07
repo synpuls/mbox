@@ -92,8 +92,9 @@ function createHatenaSuperPreHighlightSpecs(
   getLanguage: (infoValue: string) => Language | null,
 ): MboxDecorationSpec[] {
   return getSuperPreCodeBlocks(document, input).flatMap((block) => {
-    // A bare `>||` has no language, and `>|??|` (auto-detect on real Hatena)
-    // matches nothing in either resolver -- both fall through to no specs.
+    // A bare `>||` has no language, and `>|??|` (the notation's auto-detect
+    // form, which mbox does not implement) matches nothing in either resolver --
+    // both fall through to no specs.
     const language = block.language ? getLanguage(block.language) : null;
     if (!language) {
       return [];

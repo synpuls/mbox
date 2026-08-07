@@ -54,8 +54,7 @@ describe("createScrapboxQuoteSpecs", () => {
 
     // Line 1 (">one") is active: no marker-hiding mark at all -- the `>` is
     // plain, literal text -- but the line class (border/color styling)
-    // still applies, since real Scrapbox keeps a quote's left border and
-    // color while its line is focused.
+    // still applies: the line is still a quote while it is being edited.
     expect(specs).toContainEqual({
       type: "line",
       from: 0,

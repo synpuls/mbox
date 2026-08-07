@@ -1,0 +1,8 @@
+{
+  "source": "https://api.github.com/markdown",
+  "method": "POST https://api.github.com/markdown, body {\"text\": <markdown>, \"mode\": \"gfm\"}, unauthenticated",
+  "markdown": "Four spaces: `a\n    b`.\n\nTab: `a\n\tb`.\n\nPadding: ` a \n b `.\n\nTrailing space: `a  \nb`.",
+  "html": "<p>Four spaces: <code class=\"notranslate\">a b</code>.</p>\n<p>Tab: <code class=\"notranslate\">a b</code>.</p>\n<p>Padding: <code class=\"notranslate\">a  b</code>.</p>\n<p>Trailing space: <code class=\"notranslate\">a   b</code>.</p>",
+  "fetchedAt": "2026-07-30T16:42:23.652Z",
+  "githubApiVersion": "2022-11-28"
+}

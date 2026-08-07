@@ -41,7 +41,8 @@ because they test user-visible behavior through a browser, not modules.
 
 ## 3. Fast local commands
 
-- `npm test` — the development loop: the vitest `package` project only.
+- `npm test` — the development loop: the `unit`, `dom`, and isolated
+  `performance` Vitest projects.
 - `npm run test:demo` — the two demo suites.
 - `npm run typecheck` — covers `src/`, `demos/`, `tests/`, `scripts/`, and the
   root config files; run it with `npm test` before pushing.
@@ -52,15 +53,76 @@ because they test user-visible behavior through a browser, not modules.
   the packed-tarball smoke (builds first), and the Playwright layout suite.
   Run it before a release and for any change touching layout, presentation
   themes, or focus behavior.
-- CI is authoritative; it runs everything `test:all` runs plus the Node
-  version matrix and package-shape checks.
+- CI is authoritative for what ships, but the two sets are not nested. CI adds
+  the Node version matrix and package-shape checks; `test:all` adds
+  `audit:production`, which no CI job runs. And `test:all` reaches the vitest
+  suites through `test:coverage`, which is unit and dom only — so the
+  `performance` project's ratio guards run in CI (via `npm test` in the
+  node-matrix job) but not in a local `test:all`.
 
 ## 5. Vitest package tests
 
-`vitest.config.ts` defines three projects. `unit` (node) and `dom` (happy-dom)
-together are the library quality gate `npm test` runs; `demo` is the separate
-demo signal. The `mbox` import alias points at `src/index.ts`, so vitest
-always exercises source — never `dist/` (that is the package smoke's job).
+`vitest.config.ts` defines four projects. `unit` (node) and `dom` (happy-dom)
+cover ordinary package tests. Before their Vitest process starts, `npm test`
+runs the `performance` project: it contains every file with ratio guards and has
+file parallelism disabled. This separate process is necessary because Vitest
+projects otherwise run alongside one another. Together these are the library
+quality gate. `demo` is the separate demo signal. The `mbox` import alias points
+at `src/index.ts`, so vitest always exercises source — never `dist/` (that is
+the package smoke's job).
+
+The `performance` project lists its files one by one rather than matching a
+name pattern, because two of them hold ordinary tests alongside their guards.
+That makes the registration easy to get half-right: a file added to the
+`include` but not to `unit`'s `exclude` still runs, in parallel, where its
+timings are meaningless, and the suite stays green.
+`src/test-kit/performance-project.test.ts` asserts the two lists agree.
+`src/test-kit/performance.ts` holds the shared measurement protocol (build both
+inputs first, warm both sizes, alternate their order, take the paired median);
+its clock is injectable so its own tests can check the protocol against a
+logical clock instead of measuring real time.
+Ratio spread is controlled by sample count, not input size: across eight runs
+at 12k, 5 pairs ranged 2.010--2.228, while 15 pairs narrowed to 2.024--2.078;
+increasing the input as far as 96k still scattered from 2.06 to 2.19.
+
+Do not measure ratio guards immediately after a heavy test suite. The previous
+version of this section said to measure them in the old `npm test` order,
+immediately after unit/dom; that advice was wrong. Across repeated trials, the
+post-unit/dom order failed twice in three runs and reached 3.243, while putting
+performance first passed five of five and kept the consultation measurement in
+the 2.0--2.15 band. Running the performance project alone eight times had a
+ratio spread of only 0.088 (2.044--2.132). Waiting is not a reliable substitute:
+fresh checks with 0, 2, and 5 seconds between processes found a 2.454 ratio at
+two seconds and 2.502 at five seconds. Consequently `npm test` puts performance
+first, then runs unit/dom.
+
+Re-measurement after that change used ten cooled, performance-first runs. Seven
+Scrapbox guards stayed at or below 2.115. The repeated-bare formula guard had one
+2.342 outlier while its other nine runs stayed at or below 2.110; its threshold
+retains that observed maximum rather than silently discarding it. These numbers
+do not reinstate the old advice: neither that run nor any threshold calibration
+was taken immediately after unit/dom.
+
+An unterminated input measures only a long candidate that loses every time; to
+expose the quadratic path, make it valid and cached, then make each winner
+force reconsideration (see the bare-URL guard in
+`src/plugins/scrapbox/inline.performance.test.ts`).
+
+Do not add a guard when its ratio is noise or there is no superlinear risk
+worth protecting: record the numbers instead. An eight-times-larger input
+with a fixed five-second limit can still admit quadratic work; see that
+file's deliberately absent hashtag guard.
+
+### Timeouts do not interrupt synchronous work
+
+Vitest's test timeout is a verdict budget, not a preemptive execution limit for
+synchronous JavaScript. If a synchronous test body blocks past its timeout,
+Vitest cannot stop it; once the body returns, Vitest reports a timeout failure.
+An awaited operation, by contrast, can be failed near the declared deadline.
+Consequently, a performance guard's timeout still detects an over-budget
+regression, but it does not bound how long a severe synchronous regression can
+keep the process running. Choose guard input sizes so useful failures finish,
+and use CI job timeouts as the outer stop for runaway work.
 
 ## 6. DOM tests and happy-dom
 
@@ -82,8 +144,8 @@ and assert on the spec array a plugin returns. End a `specsFor()` helper with
 `validateDecorationSpecs(context, specs)` to run it through the same
 normalization and lowering as production. Empty mark and replace ranges are
 normalized there; malformed coordinates (a reversed range or an out-of-bounds
-position) fail the test. Asserting on the raw array alone cannot catch the
-latter.
+position) and a replace range crossing a line break fail the test. Asserting
+on the raw array alone cannot catch the latter.
 
 ## 8. The `@synpuls/mbox/testing` contract
 
@@ -136,6 +198,110 @@ inline. Layout fixtures live in `tests/layout/kit/fixtures/` and
 handle; add new plugin modes to `pluginsByMode` there **and** to the
 `OpenLayoutFixtureOptions` union in `tests/layout/kit/helpers.ts`).
 
+Compatibility evidence may use GitHub's public Markdown API and public
+specification/documentation; Scrapbox/Cosense's rendered, running UI, public
+help, and public API pages; Hatena's public help; and mbox's own measurements.
+Never use upstream-delivered JavaScript to investigate behaviour: do not fetch,
+save, view, deobfuscate, or extract patterns from it, or use a third-party
+summary of it.
+
+UI-observation fixtures, unlike public-API material such as
+`tests/fixtures/scrapbox/block-formula.cosense.json`, have exactly this shape:
+
+```
+{
+  // Observation date and time
+  "observedAt": "…",
+  // Such as entering text on the live page and visually checking the
+  // rendered result
+  "method": "…",
+  // URL of the observed page, or a location in the UI
+  "location": "…",
+  "cases": [ { "input": "…", "observed": "…", "facts": { … } }, … ]
+}
+```
+
+`observed` is a human-readable account of what the screen shows; `facts` is for
+tests and contains only values a person can read from the screen, never
+upstream HTML, class names, or DOM structure. Put these records in
+`tests/fixtures/<notation>/`; tests compare their recorded values with mbox
+output only and never execute an upstream implementation fragment. There are no
+UI-observation examples yet; the format is already fixed.
+
+### Upstream oracle fixtures
+
+`tests/fixtures/` holds recorded output from the notation's *own* renderer, so
+a compatibility test can compare mbox against upstream rather than against
+itself. Each fixture has the input Markdown, GitHub's HTML, the fetch timestamp
+and the API version it was served under. `inline-math-display.github.json`
+records the math display contract; `nested-inline-link-label.github.json` and
+`footnote-definition-inline.github.json` record the nested-inline contracts.
+
+Two rules make this worth having.
+
+**The expectation must be derived from the fixture, never restated in the
+test.** `math.oracle.dom.test.ts` reads GitHub's `display` values out of the
+recorded HTML and compares mbox's computed values to them. Writing
+`expect(display).toBe("inline-block")` would turn the oracle back into a second
+copy of our own opinion. The check that this holds is a mutation: edit only the
+fixture's `display` and the test must go red.
+
+The nested-inline oracle projects document-order `{ kind, text }` records. It
+recognises GitHub's semantic tags on one side, and mbox's semantic tag **or**
+its public class on the other, so it identifies the feature even if an
+implementation loses its semantic wrapper. **That means this oracle does not
+guard the tags** — measured, it stays green with the semantic tag names
+removed. Tag fidelity is the job of the individual DOM tests. It scopes links to
+the anchor and its descendants.
+For footnotes it scopes GitHub to `section[data-footnotes] li` and mbox to
+`.cm-line.mbox-gfm-footnote`; GitHub's `.data-footnote-backref` is excluded.
+Both tests assert that their scoped roots and extracted IR are nonempty, so a
+selector drift cannot pass as an empty-to-empty comparison.
+
+The code-span padding oracle similarly derives document-order `{ context,
+text }` from `inline-code-padding.github.json`, covering paragraph, link,
+table-cell and footnote occurrences. A table cell is a whole-cell projection in
+mbox rather than a nested `<code>` element, so its IR uses the parser's
+`displayValue` (the same text table-kit renders and measures); the other
+contexts read their rendered code DOM. It asserts roots for all four contexts,
+the mbox DOM/code-source correspondence, and a nonempty final IR before the
+comparison.
+
+The multiline code-span projection oracle reads paragraph `<code>` text from
+`inline-code-multiline-projection.github.json`, then compares it with
+`projectGfmInlineCodeDisplay` applied to mdast `inlineCode.value` records from
+the fixture Markdown. It deliberately does not read mbox DOM: it pins the
+source-to-display rule before the later rendering work starts using it.
+
+The table-cell oracle derives document-order `{ kind, text }` records from
+GitHub's `thead th` and `tbody tr > td`, then compares them with mbox's
+`.mbox-gfm-table-header` and `.mbox-gfm-table-row` cells. The delimiter row is
+deliberately excluded: GitHub has no corresponding HTML row. Short rows retain
+their virtual mbox cells, which therefore match GitHub's empty `<td>` records.
+Both sides assert nonempty header/body roots and a nonempty extracted IR, so a
+drifted selector cannot turn the comparison into empty-to-empty success.
+
+**Compare a small feature-specific projection, never the whole document.**
+GitHub's HTML carries a sanitizer, wrappers like
+`markdown-accessiblity-table`, and a `data-run-id` nonce that changes on every
+request — the fixture is not byte-stable, and none of that has anything to do
+with mbox's editing model. The test extracts an IR (here: each math occurrence's
+kind and display) from both sides and compares that.
+
+Only `npm run fixtures:github` touches the network; `npm test` never does. A
+committed fixture is upstream **as of `fetchedAt`** — it catches mbox
+regressing, not GitHub changing. Noticing the latter would need scheduled,
+authenticated, rate-limit-aware CI plus review of fixture diffs, and that is
+deliberately not a prerequisite for any compatibility work.
+
+Cosense page-lines fixtures are evidence fixtures, not renderer oracles. The
+API returns its documentation and source-line examples but no rendered HTML, so
+`block-formula.cosense.json` records the endpoint, fetch time, quoted rules and
+examples; its adjacent mbox tests assert our parser and rendering contract.
+Unlike a GitHub HTML fixture, those expectations cannot be derived from an
+upstream DOM. The test must say this limitation beside the fixture read, and
+`npm test` must continue to use only the committed record.
+
 ## 12. Playwright layout tests
 
 `npm run test:layout` boots the vite dev server on a dedicated port (see
@@ -157,6 +323,23 @@ interactions, wait with `completionReady()` before accept/move keys and assert
 the selected option's text between movement keys — the tooltip being visible
 does not mean the popup will accept keys (see the helper's comment for the two
 race windows).
+
+Fix a fixture mode and every external input route in a plumbing spec before a
+feature spec: an unknown mode silently falls back to `default`, and a missing
+route or resolver otherwise looks like a geometry failure (see
+`tests/layout/kit/fixture-modes.spec.ts` and `tests/layout/kit/helpers.ts`).
+
+When `demos/styles.css` duplicates a library rule, remove the host rule with
+`sheet.deleteRule` and assert the removal count, while leaving library theme
+rules intact: an overriding selector wins on specificity and silences the rule
+under test; `removeHostStyleRules` is required for this condition.
+
+For a folded syntax, start with the caret outside it and move into it; starting
+inside begins expanded and cannot check the idle folded contract (see
+`tests/layout/mbox/hidden-line-reachability.spec.ts`).
+`toHaveText` may still be useful, but compare `textContent` exactly when
+whitespace, separator placement,
+or raw source is the contract (see `tests/layout/gfm/table-image.spec.ts`).
 
 ## 13. Pixel assertion policy
 
@@ -184,11 +367,14 @@ claim honest.
 
 For a new or changed test whose purpose is a guard, verify once that it guards
 the intended path: make the smallest possible mutation to the protected target
-and confirm that the specific test or command fails. This applies only to
+and confirm that the specific assertion fails. This applies only to
 guards for public surface, negative conditions, conditional branches,
 performance thresholds, and packaging — it is not a requirement for every
 test. The narrow scope keeps the extra work small while preventing a green
 test from silently exercising a different path.
+
+A throw, test timeout, or runner timeout is not verification — particularly
+for the current ratio guards, which have timeouts.
 
 Record these three facts with the change or its review notes:
 
@@ -196,16 +382,27 @@ Record these three facts with the change or its review notes:
 - The minimal mutation made.
 - The test or command that turned red.
 
+Also check that a defence has not made its target error harmless. If it makes a
+lifecycle difference (such as construction frequency or state reuse)
+unobservable, do not turn that difference into a test contract. For example,
+the Scrapbox emphasis scanner is factory-created per parse and recreates its
+cursor when input changes, so making it a module-level singleton has no
+observable difference. Do not add an export to inspect it; verify instead at a
+boundary where a user-visible failure can be reproduced.
+
 ## 15. Coverage policy
 
-`npm run test:coverage` gates the `unit` + `dom` projects at lines/statements/
-functions 90 and branches 80 — a few points under actuals, so a sizable
-untested module fails CI without making refactors fight the meter. Themes are
-excluded (CSS-in-JS value objects), and so are the entry-point files: their
-import-time line coverage is noise, while their thin editor wrappers and
-export surface are covered by the entry tests and the package smoke.
-`test-context.ts` is deliberately included as shipped API. Raising thresholds is welcome;
-lowering them is an API-review-level decision.
+`npm run test:coverage` intentionally runs only the `unit` + `dom` projects;
+it excludes the isolated `performance` project. Coverage instrumentation
+distorts execution time, so ratio guards must not run under coverage: a guard
+that goes red only when instrumented is the worst possible kind of false
+signal. It gates lines/statements/functions 90 and branches 80 — a few points
+under actuals, so a sizable untested module fails CI without making refactors
+fight the meter. Themes are excluded (CSS-in-JS value objects), and so are the
+entry-point files: their import-time line coverage is noise, while their thin
+editor wrappers and export surface are covered by the entry tests and the
+package smoke. `test-context.ts` is deliberately included as shipped API.
+Raising thresholds is welcome; lowering them is an API-review-level decision.
 
 ## 16. CI matrix
 

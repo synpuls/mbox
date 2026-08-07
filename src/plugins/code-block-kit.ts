@@ -9,6 +9,38 @@ export interface CodeBlockKitRange {
   to: number;
 }
 
+/** A syntactically accepted first token from a fenced code block's info
+ * string. `from` and `to` are offsets within that string, not the document. */
+export interface CodeBlockKitInfoStringToken extends CodeBlockKitRange {
+  value: string;
+}
+
+/** Parses a fenced code block's info string once for every consumer that needs
+ * its language token. The string may have horizontal whitespace around it and
+ * trailing metadata after the first token, but must not contain a line
+ * terminator. A rejected value is an input-boundary failure, not an unknown
+ * language: unknown ids still return a token so callers can label them. */
+export function parseCodeBlockKitInfoString(infoValue: string): CodeBlockKitInfoStringToken | null {
+  const match = /^[ \t]*([^ \t\r\n]+)(?:[ \t]+.*)?$/.exec(infoValue);
+  if (!match?.[1]) {
+    return null;
+  }
+  const from = match.index + match[0].indexOf(match[1]);
+  return { value: match[1], from, to: from + match[1].length };
+}
+
+/** Parses a Scrapbox-style filename. Unlike an info string, spaces are part of
+ * the value; it only shares the input boundary rule that a parser-facing value
+ * must not contain a line terminator. Horizontal surrounding whitespace is
+ * ignored without silently repairing `\r` or `\n`. */
+export function parseCodeBlockKitFileName(fileName: string): string | null {
+  if (/[\r\n]/.test(fileName)) {
+    return null;
+  }
+  const value = /^[ \t]*(.*?)[ \t]*$/.exec(fileName)?.[1] ?? "";
+  return value || null;
+}
+
 /** A working Copy button: writes `code` to the clipboard, shows "Copied" for a
  * second, and flags a failed write via `data-copy-failed` (cleared on the next
  * successful copy). `className` is the caller's own button class. */
@@ -69,7 +101,7 @@ function isSupportedCodeBlockKitLanguageId(languageId: string): boolean {
 // A bare language id, or a filename (e.g. "sample.ts") -- fall back to the
 // extension when the id itself isn't one of the supported ones.
 function getCodeBlockKitLanguageByIdOrExtension(value: string): string | null {
-  const languageId = value.trim().toLowerCase();
+  const languageId = value.toLowerCase();
   if (!languageId) {
     return null;
   }
@@ -99,8 +131,8 @@ function resolveCodeBlockKitLanguage(languageId: string | null): LRLanguage | nu
  * whitespace-separated token is considered -- info strings may carry
  * trailing metadata after the language id (e.g. `ts title="demo"`). */
 export function getCodeBlockKitLanguage(infoValue: string): LRLanguage | null {
-  const [firstToken] = infoValue.trim().split(/\s+/, 1);
-  return resolveCodeBlockKitLanguage(firstToken ? getCodeBlockKitLanguageByIdOrExtension(firstToken) : null);
+  const token = parseCodeBlockKitInfoString(infoValue);
+  return resolveCodeBlockKitLanguage(token ? getCodeBlockKitLanguageByIdOrExtension(token.value) : null);
 }
 
 /** Resolves a whole filename (e.g. `my file.js`, spaces and all) to the
@@ -110,7 +142,8 @@ export function getCodeBlockKitLanguage(infoValue: string): LRLanguage | null {
  * so a space in the name (e.g. scrapbox's `code:my file.js`) doesn't hide the
  * extension. */
 export function getCodeBlockKitLanguageForFileName(fileName: string): LRLanguage | null {
-  return resolveCodeBlockKitLanguage(getCodeBlockKitLanguageByIdOrExtension(fileName));
+  const value = parseCodeBlockKitFileName(fileName);
+  return resolveCodeBlockKitLanguage(value ? getCodeBlockKitLanguageByIdOrExtension(value) : null);
 }
 
 /** One piece of a code block's content: `text` is the already-extracted
@@ -181,16 +214,16 @@ export function createCodeBlockKitHighlightSpecs(
   );
 }
 
-/** The first whitespace-separated token of an info string (e.g. `ts` in
- * `ts title="demo"`) is the code block's language label; returns null when
- * the info string has no non-whitespace token. */
+/** The accepted first token of an info string (e.g. `ts` in
+ * `ts title="demo"`) is the code block's language label. It is a projection
+ * of {@link parseCodeBlockKitInfoString}, so an input-boundary failure such as
+ * a line terminator has no label range. */
 export function getCodeBlockKitLanguageLabelRange(infoValue: string, infoFrom: number): CodeBlockKitRange | null {
-  const match = /\S+/.exec(infoValue);
-  if (!match) {
+  const token = parseCodeBlockKitInfoString(infoValue);
+  if (!token) {
     return null;
   }
-  const from = infoFrom + match.index;
-  return { from, to: from + match[0].length };
+  return { from: infoFrom + token.from, to: infoFrom + token.to };
 }
 
 /** The start offset of each line within `value` (the block's content text,

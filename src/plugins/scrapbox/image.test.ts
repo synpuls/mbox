@@ -39,12 +39,17 @@ describe("createScrapboxImageSpecs", () => {
 
 describe("defaultScrapboxImageSrcResolver", () => {
   it("appends /raw to a bare Gyazo url", () => {
-    // A bare gyazo.com URL serves Gyazo's HTML viewer page, not the raw
-    // image bytes -- fetching it directly as an <img> src gets blocked by
-    // the browser (net::ERR_BLOCKED_BY_ORB), confirmed against a real
-    // Gyazo URL. /raw redirects to the actual image.
+    // The bare form did not load as an <img> src when the default resolver was
+    // written, so the resolver appends /raw. This pins mbox's own default; it
+    // is not a recorded observation of the host.
     expect(defaultScrapboxImageSrcResolver("https://gyazo.com/0123456789abcdef0123456789abcdef")).toBe(
       "https://gyazo.com/0123456789abcdef0123456789abcdef/raw",
+    );
+  });
+
+  it("preserves public compatibility by appending /raw to a bare Gyazo subdomain url", () => {
+    expect(defaultScrapboxImageSrcResolver("https://i.gyazo.com/0123456789abcdef0123456789abcdef")).toBe(
+      "https://i.gyazo.com/0123456789abcdef0123456789abcdef/raw",
     );
   });
 

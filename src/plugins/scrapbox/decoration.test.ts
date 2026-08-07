@@ -85,8 +85,8 @@ describe("createScrapboxDecorationSpecs", () => {
     const input = "[** big]";
     const specs = specsFor(input, [1]);
 
-    // Real Scrapbox keeps big text big AND bold while you edit it; dropping the
-    // size or weight on focus would reflow the line. So the active line reveals
+    // Big text stays big AND bold while you edit it; dropping the size or
+    // weight on focus would reflow the line. So the active line reveals
     // the raw markers (no hide/replace specs) yet keeps a mark that carries both
     // the strong weight and the font-size on the content.
     expect(specs).toEqual([expect.objectContaining({ type: "mark", from: 4, to: 7 })]);

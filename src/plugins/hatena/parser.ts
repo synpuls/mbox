@@ -5,17 +5,25 @@
 //
 // Supported constructs (Hatena official markers in parentheses):
 //   *title / **title / ***title   headings (h3 / h4 / h5)
-//   -item / --item                 nested unordered list (depth = hyphen count)
+//   -item / +item                  unordered and ordered lists, nestable
+//                                  (depth = leading marker-character count)
 //   >|| ... ||<                    super-pre: a multi-line LITERAL block whose
 //                                  inner lines are NOT re-parsed as Hatena syntax
+//   >| ... |<                      plain pre: a multi-line LITERAL block
 //   >> ... <<                      blockquote, NESTABLE (tracked as per-line depth)
 //   [http://..:title=foo] / bare http:// / id:name   inline links
+//   :term:description / ::description                 definition lists
+//   ((content))                      inline footnotes
+//   |*header|cell| / |cell|          pipe tables
 //
 // The two multi-line blocks are handled the way the README's "Multi-line literal
 // blocks" section prescribes for scrapbox: super-pre lines are grouped once, and
 // the parser leaves heading/list/definition/links/quote/footnotes null or empty
 // on them, so every per-line rendering plugin naturally produces no specs for
 // them and the raw literal text stays untouched.
+
+import { findPipeOffsets } from "../pipe-table-row.js";
+import { createLogicalLines, type LogicalLine } from "../logical-lines.js";
 
 export interface HatenaRange {
   from: number;
@@ -36,8 +44,8 @@ export interface HatenaHeading {
 
 /**
  * A definition-list line: `:用語:説明` (a term + its description) or `::説明` (a
- * continuation description under the previous term). Real Hatena renders these
- * as `<dl><dt><dd>`; `::` adds another `<dd>`.
+ * continuation description under the previous term). Each `::` line adds
+ * another description under the same term.
  */
 export interface HatenaDefinition {
   /** True for a `::` continuation line (no term of its own). */
@@ -51,10 +59,11 @@ export interface HatenaDefinition {
 }
 
 /**
- * One inline footnote `((content))`. Real Hatena hoists these to a numbered list
- * at the article end and leaves a superscript reference in the text; mbox keeps
- * the number inline (with the content as a tooltip), so it stores the whole
- * marker span, the inner content, and the document-order number.
+ * One inline footnote `((content))`. The notation collects these into a
+ * numbered list at the article end, leaving a superscript reference in the
+ * text; mbox keeps the number inline (with the content as a tooltip), so it
+ * stores the whole marker span, the inner content, and the document-order
+ * number.
  */
 export interface HatenaFootnote {
   marker: HatenaRange;
@@ -69,7 +78,7 @@ export interface HatenaList {
   marker: HatenaRange;
   /** Nesting depth = number of leading marker characters. */
   depth: number;
-  /** True when the innermost marker char is `+` — real Hatena renders `<ol>`. */
+  /** True when the innermost marker char is `+` — the ordered-list form. */
   ordered: boolean;
   /** 1-based position within the current same-depth ordered run; null if bulleted. */
   ordinal: number | null;
@@ -178,19 +187,15 @@ const bareUrlRegExp = /https?:\/\/[^\s\]]+/g;
 const idLinkRegExp = /id:([A-Za-z0-9_-]+)/g;
 
 export function parseHatenaDocument(input: string): HatenaDocument {
-  const texts = input.split("\n");
   const lines: HatenaLine[] = [];
 
-  // First pass: raw geometry per line plus the super-pre grouping. The super-pre
-  // roles are resolved before any inline syntax so a literal body is never
-  // parsed as a heading, list, quote or link.
-  let offset = 0;
-  const geometry = texts.map((text, index) => {
-    const from = offset;
-    const to = from + text.length;
-    offset = to + 1;
-    return { text, line: index + 1, from, to };
-  });
+  // Construct syntax-facing logical lines once. A CR immediately preceding a
+  // split LF is a CRLF terminator, not document syntax; a lone CR is deliberately
+  // left alone (old-Mac line endings are outside this parser's contract). Raw
+  // geometry still includes that CR so literal source remains addressable in the
+  // original input.
+  const geometry = createLogicalLines(input);
+  const texts = geometry.map((line) => line.text);
 
   const { superPreRoles, superPreLanguages, preRoles } = detectLiteralBlocks(texts);
   // A line is literal if it belongs to EITHER a super-pre or a plain pre block.
@@ -251,10 +256,7 @@ const tableLineRegExp = /^\|/;
  * Group runs of consecutive non-super-pre lines that start with `|` into tables.
  * A `|...|` line inside a literal block is literal, so it never joins a table.
  */
-function parseTables(
-  geometry: { text: string; line: number; from: number; to: number }[],
-  literal: boolean[],
-): HatenaTable[] {
+function parseTables(geometry: LogicalLine[], literal: boolean[]): HatenaTable[] {
   const tables: HatenaTable[] = [];
   let current: HatenaTableRow[] = [];
 
@@ -289,7 +291,7 @@ function parseTables(
  * leading `*` becomes the `marker` (hidden on reveal) with the rest as content.
  */
 function parseTableRow(text: string, offset: number, line: number): HatenaTableRow {
-  const pipeIndexes = [...text].flatMap((character, index) => (character === "|" ? [index] : []));
+  const pipeIndexes = findPipeOffsets(text);
   const endsWithPipe = text.trimEnd().endsWith("|") && pipeIndexes.length > 1;
   const boundaries = [
     pipeIndexes[0],

@@ -70,6 +70,7 @@ function createGfmFootnoteSpecs(
     createInactiveInlineNotationSpecs(
       reference,
       activeLines.has(reference.line),
+      state.doc,
       () => {
         const definition = definitionsByIdentifier.get(reference.identifier);
         return new GfmFootnoteRefWidget(

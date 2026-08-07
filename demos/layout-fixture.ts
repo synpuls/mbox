@@ -9,6 +9,7 @@ import {
   mboxPlugins,
   quotePlugin,
 } from "mbox";
+import { gfmDefaultPresentationTheme, gfmPlugins } from "mbox/gfm";
 import { scrapboxDefaultPresentationTheme, scrapboxPlugins } from "mbox/scrapbox";
 import "/demos/styles.css";
 
@@ -62,9 +63,40 @@ const pluginsByMode = {
       },
     });
   })(),
+  // GFM images rendered rather than tokenised. The URLs a spec writes in the
+  // document are what the spec routes, so nothing here fixes a host: the mode
+  // only turns preview on.
+  gfmImagePreview: gfmPlugins({ image: { renderMode: "preview" } }),
+  // Scrapbox icons with a resolver. Without one, `[name.icon]` renders as text
+  // and there is no image whose size could be observed at all -- so a spec
+  // about icon sizing cannot even start from the default scrapbox mode. The
+  // path is deliberately distinctive so a spec can route it and see which name
+  // the resolver was called with.
+  scrapboxIcon: scrapboxPlugins({
+    link: { iconUrl: (iconName) => `/__mbox-fixture-icon__/${encodeURIComponent(iconName)}.svg` },
+  }),
+  // Kept in the shared fixture because it includes lineNumbers(), unlike the
+  // consumer-facing GFM playground. Layout specs use this to cover math rows.
+  gfmMath: gfmPlugins({
+    math: {
+      render: (expression) => {
+        const element = document.createElement(expression === "tall" ? "div" : "span");
+        element.textContent = expression;
+        if (expression === "tall") {
+          element.style.height = "3em";
+        }
+        return element;
+      },
+    },
+  }),
   none: [],
 };
-const plugins = pluginsByMode[pluginMode as keyof typeof pluginsByMode] ?? pluginsByMode.default;
+// An unrecognised mode falls back to `default`, so a typo used to produce a
+// working editor with the wrong plugins -- and a spec failing against it looks
+// exactly like a product bug. The resolved name is reported below so
+// openLayoutFixture can refuse a mode it did not get.
+const resolvedPluginMode = pluginMode in pluginsByMode ? (pluginMode as keyof typeof pluginsByMode) : "default";
+const plugins = pluginsByMode[resolvedPluginMode];
 const mboxExtension = createMboxExtension({ plugins });
 const view = createEditorView({
   parent,
@@ -85,6 +117,7 @@ const view = createEditorView({
             ...(pluginMode === "scrapboxTitleLine" || pluginMode === "scrapboxPresentation" || pluginMode === "scrapboxInlineCodeHighlight"
               ? [scrapboxDefaultPresentationTheme()]
               : []),
+            ...(pluginMode === "gfmMath" ? [gfmDefaultPresentationTheme()] : []),
             ...(labelledby ? [EditorView.contentAttributes.of({ "aria-labelledby": "fixture-editor-heading" })] : []),
           ],
         }),
@@ -93,6 +126,7 @@ view.dispatch({ selection: EditorSelection.cursor(2) });
 
 window.__mboxLayoutFixture = {
   view,
+  pluginMode: resolvedPluginMode,
   setDoc(doc, selection = 0, shouldFocus = true) {
     if (shouldFocus) {
       view.focus();
@@ -126,6 +160,9 @@ window.__mboxLayoutFixture = {
   },
   coordsAtPos(pos) {
     return view.coordsAtPos(pos) as unknown as DOMRect | null;
+  },
+  scrollIntoView(pos) {
+    view.dispatch({ effects: EditorView.scrollIntoView(pos) });
   },
   rectForText(text) {
     const walker = document.createTreeWalker(view.dom, NodeFilter.SHOW_TEXT);

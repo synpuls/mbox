@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createTestContext } from "../../editor/test-context.js";
 import { GfmCodeBlockCopyButtonWidget, gfmCodeBlockHighlightPlugin, gfmCodeBlockPlugin } from "./code-block.js";
+import { gfmQuotePlugin } from "./quote.js";
 
 const noActiveLines = new Set<number>();
 
@@ -32,6 +33,12 @@ describe("gfmCodeBlockPlugin", () => {
     expect((copy as unknown as { widget: unknown }).widget).toBeInstanceOf(GfmCodeBlockCopyButtonWidget);
   });
 
+  it("marks the raw source that spells a decoded language token", () => {
+    const specs = specsFor("```&#32;ts\ncode\n```");
+
+    expect(specs).toContainEqual({ type: "mark", from: 8, to: 10, className: "mbox-gfm-code-language-label" });
+  });
+
   it("tags each interior line with the content-line class and hides the closing fence", () => {
     const specs = specsFor("```js\ncode\n```");
     expect(specs).toContainEqual({ type: "line", from: 6, className: "mbox-gfm-code-content-line" });
@@ -50,6 +57,7 @@ describe("gfmCodeBlockPlugin", () => {
     const specs = specsFor("    indented");
     expect(specs.some((spec) => spec.type === "lineRange")).toBe(true);
     expect(specs.some((spec) => spec.type === "replace")).toBe(false);
+    expect(specs).toContainEqual({ type: "line", from: 4, className: "mbox-gfm-code-content-line" });
   });
 });
 
@@ -67,12 +75,48 @@ describe("gfmCodeBlockHighlightPlugin", () => {
     expect(specs[0]).toMatchObject({ from: 6 });
   });
 
+  it("resolves a language from a CommonMark info string with leading horizontal whitespace", () => {
+    const specs = highlightSpecsFor("``` ts\nconst x = 1;\n```");
+    expect(specs.some((spec) => spec.type === undefined && spec.className.includes("tok-keyword"))).toBe(true);
+  });
+
+  it("resolves a language after an entity-decoded line-feed separator", () => {
+    const specs = highlightSpecsFor("```&#10;ts\nconst x = 1;\n```");
+
+    expect(specs.some((spec) => spec.type === undefined && spec.className.includes("tok-keyword"))).toBe(true);
+  });
+
   it("emits nothing for a language it does not highlight", () => {
     expect(highlightSpecsFor("```text\nhello\n```")).toEqual([]);
+  });
+
+  it("never treats a math fence as a code language", () => {
+    expect(highlightSpecsFor("```math\nx^2\n```")).toEqual([]);
   });
 
   it("highlights a fenced block whose info string is a filename with a supported extension", () => {
     const specs = highlightSpecsFor("```sample.ts\nconst x: number = 1;\n```");
     expect(specs.length).toBeGreaterThan(0);
+  });
+
+  it("maps highlighted tokens through a list fence's stripped indentation", () => {
+    const input = "- x\n\n  ```ts\n  const a = 1;\n  ```";
+    const specs = highlightSpecsFor(input);
+    const keyword = specs.find((spec) => spec.type === undefined && spec.className.includes("tok-keyword"));
+    expect(keyword).toBeDefined();
+    const token = keyword as { from: number; to: number };
+
+    expect(input.slice(token.from, token.to)).toBe("const");
+    expect(keyword).toMatchObject({ from: input.indexOf("const"), to: input.indexOf("const") + 5 });
+  });
+
+  it("hides only a blockquoted fence run; the quote plugin alone owns its marker", () => {
+    const input = "> ```ts\n> const a = 1;\n> ```";
+    const codeSpecs = specsFor(input);
+    const quoteSpecs = gfmQuotePlugin().decorations!(createTestContext(input));
+
+    expect(codeSpecs).toContainEqual({ type: "replace", from: 2, to: 5 });
+    expect(codeSpecs.some((spec) => spec.type === "replace" && spec.from === 0)).toBe(false);
+    expect(quoteSpecs).toContainEqual({ type: "replace", from: 0, to: 2 });
   });
 });

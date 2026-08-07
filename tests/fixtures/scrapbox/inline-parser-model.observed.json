@@ -1,0 +1,147 @@
+{
+  "observedAt": "2026-08-06",
+  "method": "Each input was typed on a separate line in a personal Cosense project and observed after the caret had been moved to another line so that every line rendered idle. Only visible colour, typeface, and glyph differences were used; developer tools, network traffic, scripts, and upstream-delivered JavaScript were not inspected. Nine calibration lines showing each syntax on its own were observed first, in the same session, and all nine rendered as expected; the two calibration lines carrying a backtick inside a page name were included because the first three competition cases depend on those forms establishing at all. An absent fact key means that the corresponding fact was not established from the screen. `null` means observed and absent. A `classification` value of \"indeterminate\" would mean the case was observed but the visible cues did not permit an assignment; it is not used here. `outerKind` is what the region of the candidate whose delimiter starts leftmost was rendered as, with \"text\" meaning that candidate did not establish and its delimiters stayed on screen as ordinary characters. `innerKind` is what the candidate starting inside that region was rendered as, or `null` if it did not establish.",
+  "location": "A scratch page in a personal Cosense project, deleted after the observation.",
+  "cases": [
+    {
+      "group": "calibration",
+      "input": "`code`",
+      "observed": "Monospace with a background panel. The backticks were gone.",
+      "facts": { "kind": "code" }
+    },
+    {
+      "group": "calibration",
+      "input": "[* deco]",
+      "observed": "Bold. The `[* ` and `]` were gone.",
+      "facts": { "kind": "decoration" }
+    },
+    {
+      "group": "calibration",
+      "input": "[$ x]",
+      "observed": "Typeset as mathematics.",
+      "facts": { "kind": "formula" }
+    },
+    {
+      "group": "calibration",
+      "input": "[[strong]]",
+      "observed": "Bold. The `[[` and `]]` were gone.",
+      "facts": { "kind": "strong" }
+    },
+    {
+      "group": "calibration",
+      "input": "[mbox-probe-9f3a]",
+      "observed": "Red text, the appearance of a link to a page that does not exist. The brackets were gone.",
+      "facts": { "kind": "internalLink" }
+    },
+    {
+      "group": "calibration",
+      "input": "#mbox-probe-9f3a",
+      "observed": "Red text. The `#` stayed on screen.",
+      "facts": { "kind": "hashTag" }
+    },
+    {
+      "group": "calibration",
+      "input": "https://example.com/a",
+      "observed": "Blue underlined link text.",
+      "facts": { "kind": "externalLink" }
+    },
+    {
+      "group": "calibration",
+      "input": "[p`x]",
+      "observed": "Red text reading p`x. The brackets were gone and the backtick stayed as an ordinary character. A page name containing a backtick does establish as an internal link when no closing backtick follows.",
+      "facts": { "kind": "internalLink" }
+    },
+    {
+      "group": "calibration",
+      "input": "[[outer-`code]]",
+      "observed": "Bold text reading outer-`code. The double brackets were gone and the backtick stayed as an ordinary character. A strong span containing a backtick does establish when no closing backtick follows.",
+      "facts": { "kind": "strong" }
+    },
+
+    {
+      "group": "overlap",
+      "input": "[p`x]`",
+      "observed": "Ordinary characters reading [p, followed by x] in monospace with a background panel. The opening bracket stayed on screen; no link appeared. Adding a closing backtick to the calibration line above took the internal link away.",
+      "facts": { "outerKind": "text", "innerKind": "code" }
+    },
+    {
+      "group": "overlap",
+      "input": "[p`x]tail`",
+      "observed": "Ordinary characters reading [p, followed by x]tail in monospace with a background panel. No link appeared. The code span here is longer than the internal-link candidate it displaced.",
+      "facts": { "outerKind": "text", "innerKind": "code" }
+    },
+    {
+      "group": "overlap",
+      "input": "[[outer-`code]]`",
+      "observed": "Ordinary characters reading [[outer-, followed by code]] in monospace with a background panel. No bold appeared. Adding a closing backtick to the calibration line above took the strong span away. The code span here is shorter than the strong candidate it displaced.",
+      "facts": { "outerKind": "text", "innerKind": "code" }
+    },
+    {
+      "group": "overlap",
+      "input": "#tag`code`",
+      "observed": "Red text reading #tag, followed by code in monospace with a background panel. Both established side by side. Whether this is a contest the code span won, or a hash tag whose own run simply stops at a backtick, was not established from the screen.",
+      "facts": { "outerKind": "hashTag", "innerKind": "code" }
+    },
+    {
+      "group": "overlap",
+      "input": "#tag[* deco]",
+      "observed": "Red text reading #tag, followed by bold deco. Both established side by side, and the tag did not take the `[*` into itself. Whether this is a contest or a hash tag whose run stops at a bracket was not established from the screen.",
+      "facts": { "outerKind": "hashTag", "innerKind": "decoration" }
+    },
+    {
+      "group": "overlap",
+      "input": "#tag[$ x]",
+      "observed": "Red text reading #tag, followed by x typeset as mathematics. Both established side by side. Whether this is a contest or a hash tag whose run stops at a bracket was not established from the screen.",
+      "facts": { "outerKind": "hashTag", "innerKind": "formula" }
+    },
+    {
+      "group": "overlap",
+      "input": "https://example.com/a`code`",
+      "observed": "A blue underlined link reading https://example.com/a, followed by code in monospace with a background panel. Both established side by side. Whether this is a contest or a URL run that simply stops at a backtick was not established from the screen.",
+      "facts": { "outerKind": "externalLink", "innerKind": "code" }
+    },
+
+    {
+      "group": "containment",
+      "input": "[* outer `code`]",
+      "observed": "Ordinary characters reading [* outer, then code in monospace with a background panel, then an ordinary closing bracket. No bold appeared and the decoration delimiters stayed on screen.",
+      "facts": { "outerKind": "text", "innerKind": "code" }
+    },
+    {
+      "group": "containment",
+      "input": "[[strong `code`]]",
+      "observed": "Ordinary characters reading [[strong, then code in monospace with a background panel, then two ordinary closing brackets. No bold appeared and the strong delimiters stayed on screen.",
+      "facts": { "outerKind": "text", "innerKind": "code" }
+    },
+    {
+      "group": "containment",
+      "input": "`[* deco]`",
+      "observed": "The whole span rendered in monospace with a background panel, showing [* deco] with its brackets and asterisk on screen as characters. No bold appeared. The asterisk was drawn in orange, unlike the surrounding characters; whether that is highlighting applied inside a code span was not established from the screen.",
+      "facts": { "outerKind": "code", "innerKind": null }
+    },
+    {
+      "group": "containment",
+      "input": "[* deco [$ x]]",
+      "observed": "Bold text reading deco, followed by x typeset as mathematics. Both established: the decoration delimiters were gone AND the formula inside it was typeset. Whether the mathematics is drawn inside the bold span or beside it was not established from the screen.",
+      "facts": { "outerKind": "decoration", "innerKind": "formula" }
+    },
+    {
+      "group": "containment",
+      "input": "[* deco [mbox-probe-9f3a]]",
+      "observed": "Bold text reading deco, followed by red text reading mbox-probe-9f3a. Both established: the decoration delimiters were gone AND the internal link inside it established. Whether the link text is also bold was not established from the screen.",
+      "facts": { "outerKind": "decoration", "innerKind": "internalLink" }
+    },
+    {
+      "group": "containment",
+      "input": "[* deco https://example.com/a]",
+      "observed": "Bold text reading deco, followed by a blue underlined link. Both established: the decoration delimiters were gone AND the URL inside it established. Whether the link text is also bold was not established from the screen.",
+      "facts": { "outerKind": "decoration", "innerKind": "externalLink" }
+    },
+    {
+      "group": "containment",
+      "input": "[$ x [* deco]]",
+      "observed": "The line showed the ten characters [$ x deco], with deco in bold and the same weight as the calibration line's decoration. Nothing was typeset as mathematics. The decoration established and the formula did not, even though the formula's opening delimiter comes first on the line. The four missing input characters are the decoration delimiters.",
+      "facts": { "outerKind": "text", "innerKind": "decoration" }
+    }
+  ]
+}

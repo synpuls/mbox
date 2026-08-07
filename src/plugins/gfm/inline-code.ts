@@ -17,18 +17,42 @@ import { isLineSpanActive } from "./active-lines.js";
 // presentation theme on the public `.mbox-gfm-code` class.
 export const gfmInlineCodeClassName = "mbox-gfm-code";
 
-function createGfmInlineCodeSpecs(document: GfmDocument, activeLines: Set<number>): MboxDecorationSpec[] {
+function createGfmInlineCodeSpecs(
+  document: GfmDocument,
+  activeLines: Set<number>,
+  excludeMathSpans: boolean,
+): MboxDecorationSpec[] {
+  const mathCodeSpans = excludeMathSpans
+    ? document.inlineMath.flatMap((math) => math.sourceCodeSpan ? [math.sourceCodeSpan] : [])
+    : undefined;
   return document.inlineCodes.flatMap((code) =>
-    createInlineStyleKitSpecs(
-      { openMarker: code.open, content: code.content, closeMarker: code.close, className: gfmInlineCodeClassName },
-      !isLineSpanActive(code, activeLines),
-    ),
+    mathCodeSpans?.some((span) => span.from === code.open.from && span.to === code.close.to)
+      ? []
+      : createInlineStyleKitSpecs(
+          {
+            openMarker: code.open,
+            content: code.content,
+            closeMarker: code.close,
+            className: gfmInlineCodeClassName,
+            tagName: "code",
+          },
+          !isLineSpanActive(code, activeLines),
+        ),
   );
 }
 
 export function gfmInlineCodePlugin(): MboxPlugin {
+  return createGfmInlineCodePlugin(false);
+}
+
+// Bundle wiring only; intentionally absent from the public barrel.
+export function gfmInlineCodePluginExcludingMath(): MboxPlugin {
+  return createGfmInlineCodePlugin(true);
+}
+
+function createGfmInlineCodePlugin(excludeMathSpans: boolean): MboxPlugin {
   return {
     name: "gfm/inline-code",
-    decorations: (context) => createGfmInlineCodeSpecs(getGfmDocumentFromState(context.state), context.activeLineNumbers),
+    decorations: (context) => createGfmInlineCodeSpecs(getGfmDocumentFromState(context.state), context.activeLineNumbers, excludeMathSpans),
   };
 }

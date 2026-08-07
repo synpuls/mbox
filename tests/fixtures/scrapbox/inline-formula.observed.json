@@ -1,0 +1,47 @@
+{
+  "observedAt": "2026-07-31",
+  "method": "Typed into a page in a personal Cosense project, with the caret on another line so every line rendered idle. Screenshots of the rendered screen were examined. No developer tools, network traffic, or scripts were inspected. An absent `facts` key was not observable from the screen; `null` means observed and absent. `formulaText` is the source text that was typeset, read back from the typeset output.",
+  "location": "A scratch page in a personal Cosense project, deleted after the observation.",
+  "cases": [
+    {
+      "input": "[$ [x-3]+a^2 ]",
+      "observed": "Typeset as mathematics reading [x-3]+a^2, brackets and all. The interior `]` did not end it.",
+      "facts": { "isFormula": true, "formulaText": "[x-3]+a^2" }
+    },
+    {
+      "input": "[$ a] b ]",
+      "observed": "Typeset as mathematics reading a] b. The first `]` did not end it; the one after the space did.",
+      "facts": { "isFormula": true, "formulaText": "a] b" }
+    },
+    {
+      "input": "[$ a]は[$ b ]",
+      "observed": "The whole line appeared in red with its brackets visible. Nothing was typeset. The screen did not establish whether it was a formula whose content failed to typeset or was not a formula.",
+      "facts": {}
+    },
+    {
+      "input": "[$ a]",
+      "observed": "Typeset as mathematics reading a. The closing `]` has no space before it, and it still closed.",
+      "facts": { "isFormula": true, "formulaText": "a" }
+    },
+    {
+      "input": "[$  ]",
+      "observed": "A formula with nothing in it: blank space on the line where the other formulas showed mathematics.",
+      "facts": { "isFormula": true, "formulaText": "" }
+    },
+    {
+      "input": "[$ \\sqrt{3 \\times 4} ]",
+      "observed": "Typeset as a square root over 3 x 4.",
+      "facts": { "isFormula": true, "formulaText": "\\sqrt{3 \\times 4}" }
+    },
+    {
+      "input": "[$ a ]b ]",
+      "observed": "Typeset as mathematics reading a, followed by the plain text ' b ]'. It closed at the FIRST space-preceded `]`, not the last one -- the last would have given 'a ]b'.",
+      "facts": { "isFormula": true, "formulaText": "a" }
+    },
+    {
+      "input": "[$ a]b] c",
+      "observed": "Typeset as mathematics reading a, followed by the plain text 'b] c'. No `]` on this line has a space before it, and it closed at the first `]` anyway.",
+      "facts": { "isFormula": true, "formulaText": "a" }
+    }
+  ]
+}

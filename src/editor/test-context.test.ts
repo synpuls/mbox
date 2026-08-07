@@ -41,4 +41,18 @@ describe("validateDecorationSpecs", () => {
 
     expect(() => validateDecorationSpecs(context, [{ type: "mark", from: 2, to: 1, className: "x" }])).toThrow();
   });
+
+  it("rejects a replace decoration that spans a line break", () => {
+    const context = createTestContext("abc\ndef");
+
+    expect(() => validateDecorationSpecs(context, [{ type: "replace", from: 0, to: 4 }])).toThrowError(
+      new RangeError("Replace decorations must not span line breaks (from 0 to 4)"),
+    );
+  });
+
+  it("accepts a replace decoration contained within one line", () => {
+    const context = createTestContext("abc\ndef");
+
+    expect(() => validateDecorationSpecs(context, [{ type: "replace", from: 0, to: 3 }])).not.toThrow();
+  });
 });

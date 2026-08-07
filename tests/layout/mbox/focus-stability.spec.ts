@@ -118,6 +118,44 @@ test("unfocused page link anchor click navigates to its href", async ({ page }) 
   ]);
 });
 
+test("a human-length unfocused page-link press keeps its anchor through mouseup and navigates", async ({ page }) => {
+  await openLayoutFixture(page);
+  await setDoc(page, "[Page]\nplain", 0, false);
+
+  const link = page.locator("#editor a.mbox-page-link", { hasText: "Page" });
+  await expect(link).toHaveAttribute("href", "./Page");
+  const box = await link.boundingBox();
+  if (box === null) {
+    throw new Error("No page link bounds");
+  }
+
+  await page.evaluate(() => { window.name = ""; });
+  await link.evaluate((anchor) => {
+    anchor.addEventListener("mouseup", () => {
+      window.name = JSON.stringify({
+        anchorPresent: anchor.isConnected,
+        // Which element takes focus differs by engine: Chromium focuses the
+        // anchor itself, Firefox and WebKit focus the contenteditable. What
+        // matters is only that focus moved into the editor, because that is
+        // what used to remove this anchor.
+        editorFocused: document.querySelector("#editor .cm-editor")?.contains(document.activeElement) === true,
+      });
+    }, { once: true });
+  });
+
+  const expectedUrl = new URL("./Page", page.url()).toString();
+  const navigation = page.waitForURL(expectedUrl);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  // This is the simulated human press duration, not synchronization. A 0ms
+  // synthetic click misses the Firefox/WebKit regression this guards.
+  await page.waitForTimeout(80);
+  await page.mouse.up();
+  await navigation;
+
+  expect(await page.evaluate(() => JSON.parse(window.name))).toEqual({ anchorPresent: true, editorFocused: true });
+});
+
 test("unfocused icon fallback anchor click navigates to its href", async ({ page }) => {
   await openLayoutFixture(page);
   await setDoc(page, "[name.icon]\nplain", 0, false);

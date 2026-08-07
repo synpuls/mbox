@@ -4,10 +4,10 @@ import { emitLiteralBlockSpecs, hatenaDecorationProvider, literalBlockTheme } fr
 
 // Plain pre (`>| ... |<`): a preformatted block for showing text as-is. mbox
 // treats its interior as fully LITERAL — the parser leaves heading/list/link/
-// quote null on those lines, so no other plugin decorates them. (Real Hatena
-// still processes line-start block syntax inside a plain pre; mbox deliberately
-// keeps the interior literal, matching super-pre, which is the more predictable
-// behaviour for a "show this verbatim" block.) One lineRange styles the whole
+// quote null on those lines, so no other plugin decorates them. (mbox
+// deliberately keeps the interior literal, matching super-pre: that is the more
+// predictable behaviour for a "show this verbatim" block, and the notation's own
+// reference describes a plain pre the same way, so this is not a divergence.) One lineRange styles the whole
 // block; the `>|` / `|<` markers are hidden while inactive.
 export const hatenaPreClassName = "mbox-hatena-pre";
 

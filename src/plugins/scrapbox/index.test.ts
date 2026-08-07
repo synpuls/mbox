@@ -12,4 +12,8 @@ describe("scrapboxPlugins", () => {
     expect(renderingPlugins).toHaveLength(9);
     expect(renderingPlugins.every((plugin) => typeof plugin.decorations === "function")).toBe(true);
   });
+
+  it("does not include the opt-in inline-code highlighter by default", () => {
+    expect(scrapboxPlugins().some((plugin) => plugin.name === "scrapbox/inline-code-highlight")).toBe(false);
+  });
 });

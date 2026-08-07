@@ -1,0 +1,131 @@
+{
+  "observedAt": "2026-08-06",
+  "method": "A second session, after `inline-parser-model.observed.json`. Each input was typed on a separate line in a personal Cosense project and observed after the caret had been moved to another line so that every line rendered idle. Only visible colour, typeface, and glyph differences were used; developer tools, network traffic, scripts, and upstream-delivered JavaScript were not inspected. Seven calibration lines and four lines already observed in the first session were included on the same page; all eleven rendered as they had before, so the two sessions are comparable. This session asks a narrower question than the first: when two constructs compete, does the winner depend on which one is written outside? `outerKind` is what the region of the construct whose delimiter starts leftmost was rendered as, with \"text\" meaning it did not establish and its delimiters stayed on screen as ordinary characters. `innerKind` is what the construct starting inside that region was rendered as, or `null` if it did not establish. An absent fact key means the fact was not established from the screen.",
+  "location": "A scratch page in a personal Cosense project, deleted after the observation.",
+  "cases": [
+    {
+      "group": "calibration",
+      "input": "`code`",
+      "observed": "Monospace with a background panel; the backticks were gone.",
+      "facts": { "kind": "code" }
+    },
+    {
+      "group": "calibration",
+      "input": "[* deco]",
+      "observed": "Bold; the `[* ` and `]` were gone.",
+      "facts": { "kind": "decoration" }
+    },
+    {
+      "group": "calibration",
+      "input": "[$ x]",
+      "observed": "Typeset as mathematics.",
+      "facts": { "kind": "formula" }
+    },
+    {
+      "group": "calibration",
+      "input": "[[strong]]",
+      "observed": "Bold; the `[[` and `]]` were gone.",
+      "facts": { "kind": "strong" }
+    },
+    {
+      "group": "calibration",
+      "input": "[mbox-probe-9f3a]",
+      "observed": "Red text, the appearance of a link to a page that does not exist; the brackets were gone.",
+      "facts": { "kind": "internalLink" }
+    },
+    {
+      "group": "calibration",
+      "input": "#mbox-probe-9f3a",
+      "observed": "Red text; the `#` stayed on screen.",
+      "facts": { "kind": "hashTag" }
+    },
+    {
+      "group": "calibration",
+      "input": "https://example.com/a",
+      "observed": "Blue underlined link text.",
+      "facts": { "kind": "externalLink" }
+    },
+
+    {
+      "group": "control",
+      "input": "[* outer `code`]",
+      "observed": "Ordinary characters reading [* outer, then code in monospace with a background panel, then an ordinary closing bracket. Identical to the first session.",
+      "facts": { "outerKind": "text", "innerKind": "code" }
+    },
+    {
+      "group": "control",
+      "input": "`[* deco]`",
+      "observed": "The whole span in monospace with a background panel, showing [* deco] with its brackets and asterisk as characters. Identical to the first session, including the asterisk drawn in orange.",
+      "facts": { "outerKind": "code", "innerKind": null }
+    },
+    {
+      "group": "control",
+      "input": "[* deco [$ x]]",
+      "observed": "Bold text reading deco, followed by x typeset as mathematics. Identical to the first session.",
+      "facts": { "outerKind": "decoration", "innerKind": "formula" }
+    },
+    {
+      "group": "control",
+      "input": "[$ x [* deco]]",
+      "observed": "The ten characters [$ x deco], with deco in bold. Nothing was typeset as mathematics. Identical to the first session.",
+      "facts": { "outerKind": "text", "innerKind": "decoration" }
+    },
+
+    {
+      "group": "code-vs-formula",
+      "input": "[$ y `code`]",
+      "observed": "Ordinary characters reading [$ y, then code in monospace with a background panel, then an ordinary closing bracket. Nothing was typeset as mathematics: the formula did not establish even though its opening delimiter comes first on the line.",
+      "facts": { "outerKind": "text", "innerKind": "code" }
+    },
+    {
+      "group": "code-vs-formula",
+      "input": "`[$ x]`",
+      "observed": "The whole span in monospace with a background panel, showing [$ x] with its brackets as characters and the dollar sign drawn in gold. Nothing was typeset. The code span established and the formula inside it did not. With the line above, the code span wins whichever construct is written outside.",
+      "facts": { "outerKind": "code", "innerKind": null }
+    },
+
+    {
+      "group": "strong-against-the-rest",
+      "input": "`[[strong]]`",
+      "observed": "The whole span in monospace with a background panel, showing [[strong]] with its brackets as characters. No bold appeared.",
+      "facts": { "outerKind": "code", "innerKind": null }
+    },
+    {
+      "group": "strong-against-the-rest",
+      "input": "[* outer [[strong]] tail]",
+      "observed": "A screenshot was taken but this line was not read reliably. The word strong appeared in a colour unlike the surrounding characters, and the number of visible brackets was not counted. Neither construct was classified.",
+      "facts": { "classification": "indeterminate" }
+    },
+    {
+      "group": "strong-against-the-rest",
+      "input": "[[outer [* deco] tail]]",
+      "observed": "Ordinary characters reading [[outer, then bold deco, then ordinary characters reading tail]]. The strong delimiters stayed on screen; the decoration's did not.",
+      "facts": { "outerKind": "text", "innerKind": "decoration" }
+    },
+    {
+      "group": "strong-against-the-rest",
+      "input": "[$ y [[strong]] tail]",
+      "observed": "Mathematics reading y[[strong, then ordinary characters reading ] tail]. The formula established and closed at the first `]`, matching the terminator rule recorded in inline-formula.observed.json. The strong span did not establish.",
+      "facts": { "outerKind": "formula", "innerKind": null }
+    },
+    {
+      "group": "strong-against-the-rest",
+      "input": "[[outer [$ x] tail]]",
+      "observed": "Ordinary characters reading [[outer, then x typeset as mathematics, then ordinary characters reading tail]]. The strong delimiters stayed on screen; the formula established. With the line above, the formula wins whichever construct is written outside.",
+      "facts": { "outerKind": "text", "innerKind": "formula" }
+    },
+
+    {
+      "group": "bracketed-link-as-outer",
+      "input": "[mbox-probe-9f3a `code`]",
+      "observed": "Ordinary characters reading [mbox-probe-9f3a, then code in monospace with a background panel, then an ordinary closing bracket. No link appeared: the internal link did not establish.",
+      "facts": { "outerKind": "text", "innerKind": "code" }
+    },
+    {
+      "group": "bracketed-link-as-outer",
+      "input": "[mbox-probe-9f3a #mbox-probe-9f3a]",
+      "observed": "The whole line in red as one link, reading mbox-probe-9f3a #mbox-probe-9f3a, with the brackets gone. A bracketed link CAN be the outer construct, and a `#` inside it is part of the page name rather than a separate tag.",
+      "facts": { "outerKind": "internalLink", "innerKind": null }
+    }
+  ]
+}

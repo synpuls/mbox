@@ -7,7 +7,12 @@ import { gfmDefaultPresentationTheme } from "./themes/gfm-presentation.js";
 
 export { gfmPlugins } from "./plugins/gfm/index.js";
 export type { GfmPluginsOptions } from "./plugins/gfm/index.js";
-export { gfmHeadingClassNames, gfmHeadingLineClassName, gfmHeadingPlugin } from "./plugins/gfm/heading.js";
+export {
+  gfmHeadingClassNames,
+  gfmHeadingLineClassName,
+  gfmHeadingPlugin,
+  gfmHeadingSetextUnderlineClassName,
+} from "./plugins/gfm/heading.js";
 export {
   gfmBulletClassName,
   gfmListDepthClassName,
@@ -27,6 +32,8 @@ export {
   GfmCodeBlockCopyButtonWidget,
 } from "./plugins/gfm/code-block.js";
 export type { GfmCodeBlockHighlightPluginOptions } from "./plugins/gfm/code-block.js";
+export { gfmMathClassName, gfmMathPlugin, GfmMathWidget } from "./plugins/gfm/math.js";
+export type { GfmMathPluginOptions, GfmMathRenderer } from "./plugins/gfm/math.js";
 export { gfmImageClassName, gfmImageClassNames, gfmImagePlugin } from "./plugins/gfm/image.js";
 export type { GfmImagePluginOptions, GfmImageRenderMode } from "./plugins/gfm/image.js";
 export {
@@ -51,6 +58,8 @@ export { adaptGfmDocument, parseGfmDocument } from "./plugins/gfm/parser.js";
 export type {
   GfmBlockquote,
   GfmCodeBlock,
+  GfmCodeBlockContentSegment,
+  GfmCodeBlockLanguage,
   GfmDocument,
   GfmEscape,
   GfmFootnoteDefinition,

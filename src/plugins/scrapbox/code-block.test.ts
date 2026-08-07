@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { EditorState } from "@codemirror/state";
 import { createMboxExtension, mboxDecorationProviders, type MboxWidgetDecorationSpec } from "../../editor/plugin.js";
 import {
@@ -8,6 +8,7 @@ import {
   scrapboxCodeBlockCopyButtonClassName,
   scrapboxCodeBlockFileNameClassName,
   scrapboxCodeBlockHighlightPlugin,
+  scrapboxCodeBlockHighlightFileNames,
   scrapboxCodeBlockKeywordClassName,
   scrapboxCodeBlockLanguageLabelClassName,
   scrapboxCodeBlockOpenerClassName,
@@ -15,12 +16,29 @@ import {
   ScrapboxCodeBlockCopyButtonWidget,
 } from "./code-block.js";
 import { createTestContext } from "../../editor/test-context.js";
+import { parseScrapboxDocument } from "./parser.js";
+import * as parserCache from "./parser-cache.js";
 
 function specsFor(input: string) {
   return scrapboxCodeBlockPlugin().decorations!(createTestContext(input));
 }
 
+function specsForRawParserInput(input: string, highlight = false) {
+  const cache = vi.spyOn(parserCache, "getScrapboxDocumentCacheEntryFromState").mockReturnValue({ input, document: parseScrapboxDocument(input) });
+  try {
+    // CodeMirror itself folds CRLF to LF. Substitute the cache boundary to
+    // exercise the consumer's raw-parser route; do not lower these raw offsets
+    // against the deliberately normalized test state.
+    return (highlight ? scrapboxCodeBlockHighlightPlugin() : scrapboxCodeBlockPlugin()).decorations!(createTestContext(""));
+  } finally {
+    cache.mockRestore();
+  }
+}
+
 describe("createScrapboxCodeBlockSpecs", () => {
+  it("leaves code:tex and code:latex to the formula plugin instead of making code cards", () => {
+    expect(specsFor("code:tex\n x\ncode:latex\n y")).toEqual([]);
+  });
   it("decorates the opener line, its keyword and file name and the body lines", () => {
     expect(specsFor("code:a.js\n body\n more")).toEqual([
       {
@@ -72,9 +90,23 @@ describe("createScrapboxCodeBlockSpecs", () => {
   it("creates no specs without a code block", () => {
     expect(specsFor("just text\n more")).toEqual([]);
   });
+
+  it("uses the parser's logical line end when copying CRLF body text", () => {
+    const specs = specsForRawParserInput("code:a.js\r\n const value = 1;\r\n");
+    const copyWidget = specs.find((spec) => spec.type === "widget") as MboxWidgetDecorationSpec;
+
+    expect(copyWidget.widget).toEqual(new ScrapboxCodeBlockCopyButtonWidget("const value = 1;", scrapboxCodeBlockCopyButtonClassName));
+  });
 });
 
 describe("scrapboxCodeBlockHighlightPlugin", () => {
+  it("does not pass formula block file names to either synchronous highlighting or the dynamic loader", () => {
+    const document = parseScrapboxDocument("code:tex\n x\ncode:latex\n y\ncode:a.js\n const value = 1;");
+
+    expect(scrapboxCodeBlockHighlightFileNames(document)).toEqual(["a.js"]);
+    expect(highlightSpecsFor("code:tex\n const x = 1;")).toEqual([]);
+  });
+
   function highlightSpecsFor(input: string) {
     return scrapboxCodeBlockHighlightPlugin().decorations!(createTestContext(input));
   }
@@ -83,6 +115,13 @@ describe("scrapboxCodeBlockHighlightPlugin", () => {
     const specs = highlightSpecsFor("code:a.js\n const x = 1;");
 
     expect(specs).toContainEqual({ from: 11, to: 16, className: `${scrapboxCodeBlockClassNames.token} tok-keyword` });
+  });
+
+  it("does not include a CRLF terminator in a highlighted body segment", () => {
+    const specs = specsForRawParserInput("code:a.js\r\n // comment\r\n", true);
+
+    expect(specs).toContainEqual({ from: 12, to: 22, className: `${scrapboxCodeBlockClassNames.token} tok-comment` });
+    expect(specs.some((spec) => "to" in spec && spec.to === 23)).toBe(false);
   });
 
   it("resolves a file name containing spaces by its extension", () => {

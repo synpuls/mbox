@@ -34,6 +34,20 @@ describe("parseMboxDocument (table)", () => {
       });
     });
 
+    it("keeps astral-character table cell values and UTF-16 offsets intact", () => {
+      const doc = parseMboxDocument("| 😀a | b |\n| --- | --- |\n| x | y |");
+
+      expect(doc.blocks[0]).toMatchObject({
+        type: "table",
+        header: {
+          cells: [
+            { from: 1, to: 6, content: { from: 2, to: 5 }, value: "😀a" },
+            { from: 7, to: 10, content: { from: 8, to: 9 }, value: "b" },
+          ],
+        },
+      });
+    });
+
     it("does not parse table-like text inside fenced code blocks", () => {
       expect(parseMboxDocument("```\n| A | B |\n| --- | --- |\n```").blocks[0]).toMatchObject({
         type: "codeBlock",

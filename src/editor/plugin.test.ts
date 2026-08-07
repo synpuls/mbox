@@ -265,6 +265,12 @@ describe("createContentMarkSpec", () => {
       type: "mark", from: 1, to: 1, className: "x", inclusiveStart: true, inclusiveEnd: true,
     });
   });
+
+  it("keeps a supplied semantic tag name on the mark spec", () => {
+    expect(createContentMarkSpec(1, 2, "x", "strong")).toEqual({
+      type: "mark", from: 1, to: 2, className: "x", tagName: "strong", inclusiveStart: true, inclusiveEnd: true,
+    });
+  });
 });
 
 describe("point decoration specs", () => {

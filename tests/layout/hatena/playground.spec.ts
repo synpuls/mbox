@@ -230,7 +230,7 @@ test("a definition list stacks the term above its indented description", async (
 test("a name-attribute heading hides `*name*` and shows only the text", async ({ page }) => {
   await openPlayground(page, "hatena");
 
-  // Real Hatena renders `*name1*名前1` as a heading whose text is 名前1.
+  // `*name1*名前1` is a heading named `name1` whose text is 名前1.
   await setPlaygroundDoc(page, "hatena", "*name1*名前1\nplain", "*name1*名前1\nplain".length, true);
   await expect(page.locator(".cm-line").first()).toHaveText("名前1");
 
@@ -242,8 +242,8 @@ test("a name-attribute heading hides `*name*` and shows only the text", async ({
 test("an ordered (`+`) list renders its items as numbers", async ({ page }) => {
   await openPlayground(page, "hatena");
 
-  // Real Hatena renders `+` items as an <ol>; the mbox marker slot shows the
-  // sequence number instead of a bullet dot.
+  // `+` is the ordered-list form; the mbox marker slot shows the sequence
+  // number instead of a bullet dot.
   await setPlaygroundDoc(page, "hatena", "+first\n+second\n+third", 0, false);
   const markers = await page.locator(".cm-line .mbox-hatena-list-marker-slot-ordered").allInnerTexts();
   expect(markers).toEqual(["1.", "2.", "3."]);

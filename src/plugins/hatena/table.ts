@@ -112,6 +112,19 @@ export function hatenaTablePlugin(): MboxPlugin {
         fontFamily:
           'var(--mbox-table-font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace)',
       },
+      [`.${hatenaTableClassNames.cell}`]: {
+        width: "var(--mbox-table-cell-width, var(--mbox-table-kit-column-width))",
+        maxWidth: "var(--mbox-table-kit-cell-max-width, 100%)",
+        minWidth: 0,
+        overflowWrap: "anywhere",
+      },
+      // Both classes: a raw cell carries the base cell class too, so a
+      // single-class rule would only win by being written second.
+      [`.${hatenaTableClassNames.cell}.${hatenaTableClassNames.rawCell}`]: {
+        width: "auto",
+        maxWidth: "none",
+        minWidth: "auto",
+      },
     },
     name: "hatena/table",
     decorations: hatenaDecorationProvider(createHatenaTableSpecs),

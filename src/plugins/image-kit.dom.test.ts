@@ -23,6 +23,7 @@ describe("createImageKitSpecs", () => {
     const [spec] = createImageKitSpecs(
       [{ from: 1, to: 8, src: "image.png", alt: "Alt", text: "Alt" }],
       false,
+      "  image.png",
       classNames,
       measureClassNames,
       "token",
@@ -47,6 +48,7 @@ describe("createImageKitSpecs", () => {
         },
       ],
       false,
+      "  image.png",
       classNames,
       measureClassNames,
       "preview",
@@ -68,6 +70,7 @@ describe("createImageKitSpecs", () => {
     const [spec] = createImageKitSpecs(
       [{ from: 1, to: 8, src: "image.png", alt: "Alt", text: "Alt", className: "test-extra" }],
       true,
+      "  image.png",
       classNames,
       measureClassNames,
       "preview",

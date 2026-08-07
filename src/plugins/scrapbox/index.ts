@@ -25,6 +25,19 @@ import { scrapboxQuotePlugin } from "./quote.js";
 import { scrapboxTablePlugin } from "./table.js";
 import { scrapboxTitlePlugin } from "./title.js";
 
+// DELIBERATE LAYOUT DECISIONS (closed records; not a completeness audit)
+//
+// - Table icons reserve their column by the character count of their final
+//   path segment. Wide resolver images can paint outside their cells. On
+//   2026-07-31, the owner chose to do nothing: actual icons are nearly square
+//   and fit, while widening every column would also widen those square-icon
+//   columns. This is not a comprehensive upstream-audit result.
+//
+// - Icon repeats are limited to 20. On 2026-07-31, the owner chose this mbox
+//   display safety limit: an over-limit count remains an internal link rather
+//   than silently rendering fewer icons. The observed upstream `*100` case did
+//   not appear to be cut off.
+
 export interface ScrapboxPluginsOptions {
   /** Internal page/icon link rendering options. */
   link?: ScrapboxLinkPluginOptions;
@@ -38,16 +51,16 @@ export interface ScrapboxPluginsOptions {
   formula?: ScrapboxFormulaPluginOptions;
   image?: ScrapboxImagePluginOptions;
   /** `true` adds scrapboxInlineCodeHighlightPlugin(), highlighting inline
-   * code (`` `...` ``) as Ruby -- a fixed approximation, not real language
-   * detection (real Scrapbox uses highlight.js's auto-detect for this; see
-   * the plugin's own doc comment for why mbox fixes the language instead).
+   * code (`` `...` ``) as Ruby -- a fixed approximation, not per-span language
+   * detection (see the plugin's own doc comment for why mbox fixes the
+   * language instead of detecting one).
    * Off by default: it dynamically loads Ruby's legacy-mode parser the first
    * time any inline code appears, which a consumer should opt into rather
    * than pay for unconditionally. */
   inlineCodeHighlight?: boolean | ScrapboxInlineCodeHighlightPluginOptions;
   /** `true` adds scrapboxTitlePlugin(), marking the document's first line as
-   * the page title (real Scrapbox's own convention, not part of the
-   * notation itself). Off by default -- it changes the first line's visual
+   * the page title (an app-level convention, not part of the notation
+   * itself). Off by default -- it changes the first line's visual
    * appearance once a presentation theme styles the class, so a consumer
    * opts in explicitly rather than getting a surprise restyle. */
   titleLine?: boolean;

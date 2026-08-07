@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { EditorState } from "@codemirror/state";
 import { createMboxExtension, mboxDecorationProviders } from "../../editor/plugin.js";
 import { parseScrapboxDocument } from "./parser.js";
@@ -9,11 +9,24 @@ import {
   scrapboxCommandPromptClassName,
 } from "./command-line.js";
 import { createTestContext } from "../../editor/test-context.js";
+import * as parserCache from "./parser-cache.js";
 
 const noActiveLines = new Set<number>();
 
 function specsFor(input: string, activeLines: Iterable<number> = noActiveLines) {
   return scrapboxCommandLinePlugin().decorations!(createTestContext(input, { activeLines }));
+}
+
+function specsForRawParserInput(input: string, activeLines: Iterable<number> = noActiveLines) {
+  const cache = vi.spyOn(parserCache, "getScrapboxDocumentCacheEntryFromState").mockReturnValue({ input, document: parseScrapboxDocument(input) });
+  try {
+    // CodeMirror normalizes CRLF before the plugin runs. Substitute its cache
+    // boundary to exercise the raw parser output without lowering the raw
+    // offsets against the deliberately empty normalized test state.
+    return scrapboxCommandLinePlugin().decorations!(createTestContext("", { activeLines }));
+  } finally {
+    cache.mockRestore();
+  }
 }
 
 describe("createScrapboxCommandLineSpecs", () => {
@@ -31,6 +44,25 @@ describe("createScrapboxCommandLineSpecs", () => {
       { type: "mark", from: 1, to: 2, className: scrapboxCommandPromptClassName },
       { type: "mark", from: 3, to: 9, className: scrapboxCommandClassName, inclusiveStart: true, inclusiveEnd: true },
     ]);
+  });
+
+  it("uses the parser's logical content end for a CRLF command", () => {
+    const specs = specsForRawParserInput("$ ls\r\n");
+
+    expect(specs).toContainEqual({
+      type: "mark",
+      from: 2,
+      to: 4,
+      className: scrapboxCommandClassName,
+      inclusiveStart: true,
+      inclusiveEnd: true,
+    });
+    expect(specs).not.toContainEqual(expect.objectContaining({
+      type: "mark",
+      from: 2,
+      to: 5,
+      className: scrapboxCommandClassName,
+    }));
   });
 
   it("requires a space after the prompt and ignores plain lines", () => {

@@ -44,12 +44,13 @@ export const scrapboxCodeBlockClassNames = {
 function getCodeBlockSegments(input: string, block: ScrapboxCodeBlock): CodeBlockKitSegment[] {
   return block.bodyLines.map((body) => {
     const from = body.from + block.indent + 1;
-    return { from, to: body.to, text: input.slice(from, body.to) };
+    return { from, to: body.logicalTo, text: input.slice(from, body.logicalTo) };
   });
 }
 
 function createScrapboxCodeBlockSpecs(document: ScrapboxDocument, input: string): MboxDecorationSpec[] {
   return document.codeBlocks.flatMap((block) => {
+    if (block.kind === "formula") return [];
     const opener = block.openerLine;
     const keywordEnd = opener.content.from + codeKeywordLength;
 
@@ -62,11 +63,11 @@ function createScrapboxCodeBlockSpecs(document: ScrapboxDocument, input: string)
       { type: "mark", from: opener.content.from, to: keywordEnd, className: scrapboxCodeBlockKeywordClassName },
     ];
 
-    if (opener.to > keywordEnd) {
+    if (opener.logicalTo > keywordEnd) {
       specs.push({
         type: "mark",
         from: keywordEnd,
-        to: opener.to,
+        to: opener.logicalTo,
         className: `${scrapboxCodeBlockFileNameClassName} ${scrapboxCodeBlockLanguageLabelClassName}`,
       });
     }
@@ -93,6 +94,12 @@ function createScrapboxCodeBlockSpecs(document: ScrapboxDocument, input: string)
 
     return specs;
   });
+}
+
+/** File names eligible for code highlighting. Formula blocks deliberately do
+ * not reach this boundary: the dynamic loader must not try to resolve TeX. */
+export function scrapboxCodeBlockHighlightFileNames(document: ScrapboxDocument): string[] {
+  return document.codeBlocks.filter((block) => block.kind === "code").map((block) => block.fileName);
 }
 
 // Monospace here isn't a hard layout requirement the way table's is (no
@@ -137,6 +144,9 @@ function createScrapboxCodeBlockHighlightSpecs(
   getLanguage: (fileName: string) => Language | null,
 ): MboxDecorationSpec[] {
   return document.codeBlocks.flatMap((block) => {
+    if (block.kind === "formula") {
+      return [];
+    }
     const language = getLanguage(block.fileName);
     if (!language) {
       return [];
@@ -157,7 +167,7 @@ export function scrapboxCodeBlockHighlightPlugin(options: ScrapboxCodeBlockHighl
   }
 
   const loader = createCodeBlockKitLanguageLoader(
-    (state) => getScrapboxDocumentFromState(state).codeBlocks.map((block) => block.fileName),
+    (state) => scrapboxCodeBlockHighlightFileNames(getScrapboxDocumentFromState(state)),
     {
       ...(options.languages === "all" ? {} : { languages: options.languages }),
       onLoadError: options.onLoadError,

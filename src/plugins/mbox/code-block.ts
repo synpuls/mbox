@@ -31,6 +31,7 @@ import {
   getCodeBlockKitContentLineStarts,
   getCodeBlockKitLanguage,
   getCodeBlockKitLanguageLabelRange,
+  parseCodeBlockKitInfoString,
 } from "../code-block-kit.js";
 import { createCodeBlockKitLanguageLoader } from "../code-block-language-loader.js";
 
@@ -128,8 +129,7 @@ export function getCodeBlockLanguageId(block: MboxBlock | undefined): string | n
     return null;
   }
 
-  const [languageId] = block.infoValue.trim().split(/\s+/, 1);
-  return languageId ? languageId.toLowerCase() : null;
+  return parseCodeBlockKitInfoString(block.infoValue)?.value.toLowerCase() ?? null;
 }
 
 function createCodeBlockHighlightSpecs(

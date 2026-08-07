@@ -2,6 +2,7 @@ import { LanguageDescription, type Language } from "@codemirror/language";
 import { languages as codeMirrorLanguages } from "@codemirror/language-data";
 import type { EditorState, Extension } from "@codemirror/state";
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
+import { parseCodeBlockKitFileName, parseCodeBlockKitInfoString } from "./code-block-kit.js";
 
 // Dynamically loads a code block's highlight language from CodeMirror's full
 // @codemirror/language-data registry (~140 languages, each fetched via a
@@ -30,7 +31,9 @@ export interface CodeBlockKitLanguageLoaderOptions {
    * the first whitespace-separated token is the language id/filename (trailing
    * text is metadata, e.g. `ts title="demo"`). `"fileName"` treats the whole
    * trimmed string as one filename -- for callers like scrapbox whose code block
-   * string is always a bare filename that may itself contain spaces. */
+   * string is always a bare filename that may itself contain spaces. Both
+   * modes reject line terminators; filename mode only trims surrounding
+   * horizontal whitespace. */
   infoValueKind?: "infoString" | "fileName";
 }
 
@@ -55,17 +58,25 @@ type LoadState =
   | { status: "loaded"; language: Language }
   | { status: "failed"; error: unknown };
 
-function getCodeBlockKitInfoToken(infoValue: string, infoValueKind: "infoString" | "fileName"): string | null {
-  if (infoValueKind === "fileName") {
-    const trimmed = infoValue.trim();
-    return trimmed || null;
+/**
+ * Settings are written by people, so permit surrounding whitespace. A line
+ * terminator is rejected rather than trimmed: it is almost certainly a
+ * malformed setting, and must not turn into a valid language name.
+ */
+function normalizeConfiguredLanguageName(value: string): string | null {
+  if (/\r|\n/.test(value)) {
+    return null;
   }
-  const [token] = infoValue.trim().split(/\s+/, 1);
-  return token || null;
+  return value.trim().toLowerCase();
 }
 
-function normalizeLanguageName(value: string): string {
-  return value.trim().toLowerCase();
+/**
+ * Parser output has already passed the info-string/file-name parsing boundary,
+ * which rejects line terminators and handles its own whitespace rules. Do not
+ * alter that token here.
+ */
+function normalizeParsedLanguageName(value: string): string {
+  return value.toLowerCase();
 }
 
 function getCacheKey(description: LanguageDescription): string {
@@ -79,7 +90,10 @@ function createAllowedDescriptions(languageIds: readonly string[] | undefined): 
 
   const descriptions = new Map<string, LanguageDescription>();
   for (const languageId of languageIds) {
-    const token = normalizeLanguageName(languageId);
+    const token = normalizeConfiguredLanguageName(languageId);
+    if (!token) {
+      continue;
+    }
     const description =
       LanguageDescription.matchLanguageName(codeMirrorLanguages, token, false) ??
       LanguageDescription.matchFilename(codeMirrorLanguages, token);
@@ -95,12 +109,12 @@ function findLanguageDescription(
   infoValue: string,
   infoValueKind: "infoString" | "fileName",
 ): { languageId: string; description: LanguageDescription } | null {
-  const token = getCodeBlockKitInfoToken(infoValue, infoValueKind);
+  const token = infoValueKind === "fileName" ? parseCodeBlockKitFileName(infoValue) : parseCodeBlockKitInfoString(infoValue)?.value;
   if (!token) {
     return null;
   }
 
-  const languageId = normalizeLanguageName(token);
+  const languageId = normalizeParsedLanguageName(token);
   const description =
     LanguageDescription.matchLanguageName(descriptions, languageId, false) ??
     LanguageDescription.matchFilename(descriptions, token);

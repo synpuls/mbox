@@ -5,6 +5,69 @@ test("table header line height stays stable between focused and non-focused stat
   await expectFirstLineHeightStableBetweenFocusedAndUnfocused(page, "| A | B |\n| --- | --- |\n| x | y |\nplain", 1, 38);
 });
 
+test("Japanese cells reserve their two-ch-per-character column width without crossing into the next column", async ({ page }) => {
+  await openLayoutFixture(page);
+  await setDoc(page, "| 日本 | B |\n| --- | --- |\n| A | C |", 0, false);
+
+  const layout = await page.locator("#editor .mbox-table-header").evaluate((row) => {
+    const cells = [...row.querySelectorAll<HTMLElement>(".mbox-table-cell")];
+    if (cells.length !== 2) throw new Error("Expected two rendered table cells");
+
+    const [japaneseCell, nextCell] = cells;
+    const japaneseRect = japaneseCell.getBoundingClientRect();
+    const nextRect = nextCell.getBoundingClientRect();
+    const probe = document.createElement("span");
+    probe.textContent = "0";
+    probe.style.cssText = `font: ${getComputedStyle(japaneseCell).font}; position: absolute; visibility: hidden`;
+    document.body.append(probe);
+    const chWidth = probe.getBoundingClientRect().width;
+    probe.remove();
+    const extraWidth = getComputedStyle(japaneseCell).getPropertyValue("--mbox-table-column-extra-width").trim();
+    if (!extraWidth.endsWith("ch")) throw new Error("Expected table cell extra width to be expressed in ch");
+    const extraWidthCh = Number.parseFloat(extraWidth);
+    if (!Number.isFinite(extraWidthCh)) throw new Error("Expected table cell extra width to be numeric");
+
+    return { chWidth, extraWidthCh, japaneseCellWidth: japaneseRect.width, nextCellLeft: nextRect.left, japaneseCellRight: japaneseRect.right };
+  });
+
+  // Two Japanese characters reserve 4ch; measure the demo cell chrome separately.
+  expect(layout.japaneseCellWidth).toBeCloseTo(layout.chWidth * (4 + layout.extraWidthCh), 0);
+  expect(layout.japaneseCellRight).toBeLessThanOrEqual(layout.nextCellLeft + 0.5);
+});
+
+test("table columns keep their computed widths without the demo stylesheet", async ({ page }) => {
+  await openLayoutFixture(page);
+  const doc = "| A | Much longer |\n| --- | --- |\n| x | y |\nplain";
+  await setDoc(page, doc, doc.length, false);
+
+  const disabledStylesheets = await page.evaluate(() => {
+    const demoSheets = Array.from(document.styleSheets).filter((sheet) => {
+      if (sheet.href?.endsWith("/demos/styles.css")) return true;
+      const owner = sheet.ownerNode;
+      return owner instanceof HTMLElement && owner.dataset.viteDevId?.endsWith("/demos/styles.css");
+    });
+    for (const sheet of demoSheets) sheet.disabled = true;
+    return { count: demoSheets.length, allDisabled: demoSheets.every((sheet) => sheet.disabled) };
+  });
+  expect(disabledStylesheets.count, "demos/styles.css did not produce a stylesheet to disable").toBeGreaterThan(0);
+  expect(disabledStylesheets.allDisabled).toBe(true);
+
+  const widths = await page.evaluate(() => {
+    const headerCells = [...document.querySelectorAll<HTMLElement>(".mbox-table-header .mbox-table-cell")];
+    const bodyCells = [...document.querySelectorAll<HTMLElement>(".mbox-table-row .mbox-table-cell")];
+    if (headerCells.length !== 2 || bodyCells.length !== 2) {
+      throw new Error("Expected two rendered cells in both the header and body row");
+    }
+    return {
+      header: headerCells.map((cell) => cell.getBoundingClientRect().width),
+      body: bodyCells.map((cell) => cell.getBoundingClientRect().width),
+    };
+  });
+
+  expect(widths.header[0]).toBeCloseTo(widths.body[0]!, 5);
+  expect(widths.header[1]).toBeCloseTo(widths.body[1]!, 5);
+  expect(widths.header[0]).not.toBeCloseTo(widths.header[1]!, 1);
+});
 
 test("extra wide table rows wrap without making the rendered table wider than the editor", async ({ page }) => {
   await openLayoutFixture(page);
@@ -74,7 +137,6 @@ test("extra wide table rows wrap without making the rendered table wider than th
   expect(layout.pageScrollWidth).toBeLessThanOrEqual(layout.pageClientWidth);
   expect(layout.lineCount).toBeGreaterThan(1);
 });
-
 
 test("long space-separated table cells wrap without horizontal overflow", async ({ page }) => {
   await openLayoutFixture(page);
@@ -292,5 +354,3 @@ test("focused extra wide table rows do not create horizontal editor overflow", a
   expect(layout.secondCellLineCount).toBeGreaterThanOrEqual(1);
   expect(layout.scrollerScrollWidth).toBeLessThanOrEqual(layout.scrollerClientWidth);
 });
-
-

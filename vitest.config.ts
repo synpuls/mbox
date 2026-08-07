@@ -7,10 +7,13 @@ const alias = {
   mbox: new URL("./src/index.ts", import.meta.url).pathname,
 };
 
-// Three projects so `npm test` means package correctness only: demo tests are
+// Four projects so `npm test` means package correctness only: demo tests are
 // a separate signal (`npm run test:demo`), not part of the library quality
-// gate. The unit/dom split makes the environment structural — see the note on
-// the projects list below.
+// gate. `npm test` runs the performance project before the unit/dom Vitest
+// process, and this project itself is non-parallel, so the heavy package suite
+// cannot distort a ratio measurement. The
+// unit/dom split makes the environment structural — see the note on the
+// projects list below.
 export default defineConfig({
   test: {
     coverage: {
@@ -51,7 +54,14 @@ export default defineConfig({
           name: "unit",
           environment: "node",
           include: ["src/**/*.test.ts", "tests/conformance/**/*.test.ts"],
-          exclude: [...configDefaults.exclude, "src/**/*.dom.test.ts"],
+          exclude: [
+            ...configDefaults.exclude,
+            "src/**/*.dom.test.ts",
+            "src/plugins/mbox/parser.inline.test.ts",
+            "src/plugins/gfm/math.test.ts",
+            "src/plugins/hatena/parser.performance.test.ts",
+            "src/plugins/scrapbox/inline.performance.test.ts",
+          ],
         },
       },
       {
@@ -67,6 +77,30 @@ export default defineConfig({
         test: {
           name: "demo",
           include: ["demos/**/*.test.ts"],
+        },
+      },
+      {
+        resolve: { alias },
+        test: {
+          name: "performance",
+          environment: "node",
+          // Listed explicitly rather than matched by a name pattern: two of
+          // these files hold ordinary tests alongside their ratio guards, so
+          // no file-name convention selects the set. A new guard file must be
+          // added here AND to the unit project's exclude, or it silently runs
+          // in the parallel unit project where its measurements are worthless.
+          include: [
+            "src/plugins/mbox/parser.inline.test.ts",
+            "src/plugins/gfm/math.test.ts",
+            "src/plugins/hatena/parser.performance.test.ts",
+            // The guards this file owes are todos until the work that makes
+            // them pass lands; see the file's own header.
+            "src/plugins/scrapbox/inline.performance.test.ts",
+          ],
+          // Ratio samples take only a few milliseconds. Keep the entire
+          // project in one worker so neither another test file nor another
+          // worker can delay one side of a sample pair.
+          fileParallelism: false,
         },
       },
     ],

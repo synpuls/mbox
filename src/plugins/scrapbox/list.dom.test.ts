@@ -37,8 +37,8 @@ describe("scrapboxListPlugin", () => {
     });
     Object.defineProperty(view, "hasFocus", { value: true });
 
-    // Like real Scrapbox, the dot stays on the line under the cursor: both
-    // bullet lines keep their dot no matter where the selection is.
+    // The dot stays on the line under the cursor: the bullet hides no syntax,
+    // so both bullet lines keep their dot no matter where the selection is.
     view.dispatch({ selection: EditorSelection.cursor(0) });
     expect(parent.querySelectorAll(`.${scrapboxBulletClassName}`)).toHaveLength(2);
 

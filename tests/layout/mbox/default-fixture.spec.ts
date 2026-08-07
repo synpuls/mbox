@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { errors, expect, test, type Page } from "@playwright/test";
 import { openLayoutFixture } from "../kit/helpers";
 
 async function scrollDemoEditorUntilVisible(page: Page, selector: string) {
@@ -10,8 +10,21 @@ async function scrollDemoEditorUntilVisible(page: Page, selector: string) {
     await page.evaluate((index) => {
       window.scrollTo(0, index * 220);
     }, step);
-    await page.waitForTimeout(20);
+
+    try {
+      await page.locator(selector).first().waitFor({ state: "attached", timeout: 100 });
+      return;
+    } catch (error) {
+      // Only "not there yet" is a reason to scroll again. A bad selector or a
+      // closed page must surface now, not as a late count assertion twelve
+      // steps later.
+      if (!(error instanceof errors.TimeoutError)) {
+        throw error;
+      }
+    }
   }
+
+  await expect(page.locator(selector)).not.toHaveCount(0);
 }
 
 test("layout fixture exposes a CodeMirror view", async ({ page }) => {

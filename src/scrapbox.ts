@@ -82,6 +82,8 @@ export {
   scrapboxHashTagClassName,
   scrapboxIconClassName,
   scrapboxIconImageClassName,
+  scrapboxStrongIconClassName,
+  scrapboxStrongIconMeasureClassName,
   scrapboxLinkClassName,
   scrapboxLinkClassNames,
   scrapboxLinkPlugin,

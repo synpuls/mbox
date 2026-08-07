@@ -46,8 +46,8 @@ describe("scrapboxQuotePlugin", () => {
     view.dispatch({ selection: EditorSelection.cursor(2) });
 
     expect(parent.querySelector(".cm-line")?.textContent).toBe(">quoted");
-    // Real Scrapbox keeps a quote's left border/color while its line is
-    // focused -- only the `>` marker itself is revealed as raw text.
+    // A focused quote line keeps its left border and colour -- only the `>`
+    // marker itself is revealed as raw text.
     expect(parent.querySelector(`.${scrapboxQuoteLineClassName}`)).not.toBeNull();
     expect(parent.querySelector(`.${scrapboxQuoteMarkerHiddenClassName}`)).toBeNull();
 

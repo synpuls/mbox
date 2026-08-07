@@ -43,10 +43,10 @@ function decorationContentClassName(decos: string[]): string {
 
 /**
  * The class names that must survive onto the active (revealed) line: the strong
- * weight and its font-size, plus italic, strikethrough and underline. Real
- * Scrapbox keeps all of these while you edit the text, and dropping them on focus
- * would change the glyphs under the cursor (see todo — "bold / 斜体 / 打ち消し /
- * 下線を focus の有無に関わらず適用"). Only the raw markers are revealed; the
+ * weight and its font-size, plus italic, strikethrough and underline. mbox
+ * keeps all of these while you edit the text: dropping them on focus would
+ * change the glyphs under the cursor and reflow the line. Only the raw
+ * markers are revealed; the
  * decoration's own styling is unchanged. Returns an empty string when the node
  * carries none of the preserved styles (all four decoration styles qualify, so
  * in practice this is empty only for a decoration with no recognised deco char).

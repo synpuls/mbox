@@ -37,7 +37,7 @@ function createScrapboxCommandLineSpecs(
     return [
       { type: "line", from: line.from, className: scrapboxCommandLineClassName },
       { type: "mark", from: line.content.from, to: line.content.from + 1, className: scrapboxCommandPromptClassName },
-      ...(commandFrom < line.to ? [createContentMarkSpec(commandFrom, line.to, scrapboxCommandClassName)] : []),
+      ...(commandFrom < line.content.to ? [createContentMarkSpec(commandFrom, line.content.to, scrapboxCommandClassName)] : []),
     ];
   });
 }

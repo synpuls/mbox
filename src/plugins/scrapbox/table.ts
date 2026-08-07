@@ -1,6 +1,7 @@
 import type { MboxDecorationSpec, MboxPlugin } from "../../editor/plugin.js";
 import type { ScrapboxDocument, ScrapboxTableBlock } from "./parser.js";
 import { getScrapboxDocumentCacheEntryFromState } from "./parser-cache.js";
+import { projectScrapboxLinkDisplayValue } from "./link.js";
 import {
   createTableCellSpecs,
   createTableHeaderRowSpecs,
@@ -69,10 +70,11 @@ function toKitRows(input: string, block: ScrapboxTableBlock): TableKitRow[] {
     const cells: TableKitCell[] = [];
     let from = line.content.from;
 
-    for (const rawCell of input.slice(line.content.from, line.to).split("\t")) {
+    for (const rawCell of input.slice(line.content.from, line.logicalTo).split("\t")) {
       const to = from + rawCell.length;
       const { value, ...content } = trimRange(input, from, to);
-      cells.push({ from, to, content, value });
+      const displayValue = projectScrapboxLinkDisplayValue(input, line, content.from, content.to);
+      cells.push({ from, to, content, value, ...(displayValue === undefined ? {} : { displayValue }) });
       from = to + 1; // skip the tab separator
     }
 
@@ -80,7 +82,7 @@ function toKitRows(input: string, block: ScrapboxTableBlock): TableKitRow[] {
       className: index === 0 ? `${scrapboxTableRowClassName} ${scrapboxTableHeaderClassName}` : scrapboxTableRowClassName,
       line: line.line,
       from: line.from,
-      to: line.to,
+      to: line.logicalTo,
       cells,
     };
   });
@@ -100,8 +102,8 @@ function createScrapboxTableSpecs(input: string, document: ScrapboxDocument, act
       { type: "mark", from: opener.content.from, to: keywordEnd, className: scrapboxTableKeywordClassName },
     ];
 
-    if (opener.to > keywordEnd) {
-      specs.push({ type: "mark", from: keywordEnd, to: opener.to, className: scrapboxTableNameClassName });
+    if (opener.logicalTo > keywordEnd) {
+      specs.push({ type: "mark", from: keywordEnd, to: opener.logicalTo, className: scrapboxTableNameClassName });
     }
 
     const rows = toKitRows(input, block);
@@ -126,6 +128,19 @@ export function scrapboxTablePlugin(): MboxPlugin {
       [`.${scrapboxTableClassName}`]: {
         fontFamily:
           'var(--mbox-table-font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace)',
+      },
+      [`.${scrapboxTableCellClassName}`]: {
+        width: "var(--mbox-table-cell-width, var(--mbox-table-kit-column-width))",
+        maxWidth: "var(--mbox-table-kit-cell-max-width, 100%)",
+        minWidth: 0,
+        overflowWrap: "anywhere",
+      },
+      // Both classes: a raw cell carries the base cell class too, so a
+      // single-class rule would only win by being written second.
+      [`.${scrapboxTableCellClassName}.${scrapboxTableRawCellClassName}`]: {
+        width: "auto",
+        maxWidth: "none",
+        minWidth: "auto",
       },
     },
     name: "scrapbox/table",

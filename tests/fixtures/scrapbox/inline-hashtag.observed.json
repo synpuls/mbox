@@ -1,0 +1,57 @@
+{
+  "observedAt": "2026-07-31",
+  "method": "Typed into a page in a personal Cosense project, with the caret on another line so every line rendered idle. Screenshots of the rendered screen were examined. No developer tools, network traffic, or scripts were inspected. `tagName` is the string shown as the tag, read from the screen; the target page name was not observed. An absent `facts` key was not observable from the screen; `null` means observed and absent. The filler text placed around syntax during observation was replaced with ASCII; the syntax under observation remains as entered.",
+  "location": "A scratch page in a personal Cosense project, deleted after the observation.",
+  "cases": [
+    {
+      "input": "##",
+      "observed": "Plain black text. Not a tag.",
+      "facts": { "isTag": false, "tagName": null }
+    },
+    {
+      "input": "###",
+      "observed": "Plain black text. Not a tag.",
+      "facts": { "isTag": false, "tagName": null }
+    },
+    {
+      "input": "#####",
+      "observed": "Plain black text. Not a tag.",
+      "facts": { "isTag": false, "tagName": null }
+    },
+    {
+      "input": "##a",
+      "observed": "Red link text reading ##a. This IS a tag, even though it starts with two hashes -- the deciding thing is that the body is not all hashes.",
+      "facts": { "isTag": true, "tagName": "##a" }
+    },
+    {
+      "input": "#a#",
+      "observed": "Red link text reading #a#. A trailing hash does not stop it being a tag.",
+      "facts": { "isTag": true, "tagName": "#a#" }
+    },
+    {
+      "input": "# tag",
+      "observed": "Plain black text. A space after the hash means no tag.",
+      "facts": { "isTag": false, "tagName": null }
+    },
+    {
+      "input": "x##",
+      "observed": "Plain black text. A hash run that does not start the token is not a tag.",
+      "facts": { "isTag": false, "tagName": null }
+    },
+    {
+      "input": "`code`## rest",
+      "observed": "The backticked part rendered as inline code; the hash run after it stayed plain black text. A hash run immediately after a consumed token is not a tag.",
+      "facts": { "isTag": false, "tagName": null }
+    },
+    {
+      "input": "#a",
+      "observed": "Red link text reading #a. The ordinary case, recorded as the control.",
+      "facts": { "isTag": true, "tagName": "#a" }
+    },
+    {
+      "input": "###a",
+      "observed": "Red link text reading ###a. Three leading hashes with a letter after them is still a tag.",
+      "facts": { "isTag": true, "tagName": "###a" }
+    }
+  ]
+}

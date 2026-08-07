@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createTestContext, validateDecorationSpecs } from "../../editor/test-context.js";
 import { gfmTableClassNames, gfmTablePlugin, gfmTableRawCellClassName, gfmTableRenderedClassName } from "./table.js";
+import { parseGfmDocument } from "./parser.js";
 
 const noActiveLines = new Set<number>();
 
@@ -48,10 +49,107 @@ describe("gfmTablePlugin", () => {
     expect(cellSpecs[0].attributes?.style).toContain("--mbox-table-kit-column-width: 1ch");
   });
 
+  it("reserves two ch units for each full-width Japanese character", () => {
+    const cellSpecs = specsFor("| 日本 | B |\n| --- | --- |\n| A | C |").filter(
+      (spec) => spec.type === undefined && spec.className.includes("mbox-gfm-table-cell") && !spec.className.includes("delimiter"),
+    ) as Array<{ from: number; attributes?: { style: string } }>;
+    expect(cellSpecs.find((spec) => spec.from === 2)?.attributes?.style).toContain("--mbox-table-kit-column-width: 4ch");
+  });
+
+  it("measures decorated and escaped cell text after its inline syntax is hidden", () => {
+    const specs = specsFor("| **bold** | bold |\n| --- | --- |");
+    const cells = specs.filter(
+      (spec) => spec.type === undefined && spec.className.includes("mbox-gfm-table-cell") && !spec.className.includes("delimiter"),
+    ) as Array<{ from: number; attributes?: { style: string } }>;
+
+    expect(cells[0].attributes?.style).toContain("--mbox-table-kit-column-width: 4ch");
+    expect(cells[1].attributes?.style).toContain("--mbox-table-kit-column-width: 4ch");
+
+    const escapedCell = specsFor("| \\| |\n| --- |").find(
+      (spec) => spec.type === undefined && spec.className.includes("mbox-gfm-table-cell") && !spec.className.includes("delimiter"),
+    ) as { attributes?: { style: string } };
+    expect(escapedCell.attributes?.style).toContain("--mbox-table-kit-column-width: 1ch");
+  });
+
+  it("projects multi-backtick inline code from the shared content range", () => {
+    const specs = specsFor("| ``a`b`` | b |\n| --- | --- |");
+    const cells = specs.filter(
+      (spec) => spec.type === undefined && spec.className.includes("mbox-gfm-table-cell") && !spec.className.includes("delimiter"),
+    ) as Array<{ from: number; attributes?: { style: string } }>;
+
+    expect(cells.find((spec) => spec.from === 2)?.attributes?.style).toContain("--mbox-table-kit-column-width: 3ch");
+  });
+
+  it("measures stripped code-span padding from the projected display value", () => {
+    const cells = specsFor("| ` a ` | a |\n| --- | --- |").filter(
+      (spec) => spec.type === undefined && spec.className.includes("mbox-gfm-table-cell") && !spec.className.includes("delimiter"),
+    ) as Array<{ from: number; attributes?: { style: string } }>;
+
+    expect(cells.find((spec) => spec.from === 2)?.attributes?.style).toContain("--mbox-table-kit-column-width: 1ch");
+  });
+
+  it("measures an in-cell footnote by its idle chip label, not its raw bracket syntax", () => {
+    const footnoteCell = specsFor("| ref[^1] | b |\n| --- | --- |\n| x | y |\n\n[^1]: note").find(
+      (spec) => spec.type === undefined && spec.className.includes("mbox-gfm-table-cell") && !spec.className.includes("delimiter"),
+    ) as { attributes?: { style: string } };
+
+    expect(footnoteCell.attributes?.style).toContain("--mbox-table-kit-column-width: 4ch");
+  });
+
   it("hides the raw pipes on inactive lines", () => {
     const replaces = specsFor(table).filter((spec) => spec.type === "replace");
     // Leading/middle/trailing pipes across three lines are all replaced away.
     expect(replaces.length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ["an omitted closing pipe", "| a | b |\n| --- | --- |\n| 1 | 2 | 3", "| 3"],
+    ["an escaped pipe inside the first physical cell", "| a | b |\n| --- | --- |\n| 1\\|x | 2 | 3 |", "| 3"],
+    ["a code-span pipe that is a physical separator", "| a | b |\n| --- | --- |\n| `a|b` | 2 | 3 |", "| 2"],
+  ])("hides one excess tail after the second participating cell with %s", (_name, input, tailToken) => {
+    const tailFrom = input.lastIndexOf(tailToken);
+    const specs = specsFor(input);
+    const bodyCells = specs.filter(
+      (spec) => spec.type === undefined && spec.className.includes("mbox-gfm-table-cell") && spec.from >= input.lastIndexOf("\n") + 1,
+    );
+
+    expect(bodyCells).toHaveLength(2);
+    expect(specs).toContainEqual({ type: "replace", from: tailFrom, to: input.length });
+    expect(bodyCells.some((spec) => spec.from >= tailFrom)).toBe(false);
+  });
+
+  it("keeps alignment and widths on participating cells only", () => {
+    const input = "| a | b |\n| :---: | --- |\n| 1 | 22 | a-very-wide-excess |";
+    const cells = specsFor(input).filter(
+      (spec) => spec.type === undefined && spec.className.includes("mbox-gfm-table-cell") && !spec.className.includes("delimiter"),
+    ) as Array<{ from: number; attributes?: { style: string } }>;
+    const bodyStart = input.lastIndexOf("\n") + 1;
+    const bodyCells = cells.filter((cell) => cell.from >= bodyStart);
+
+    expect(bodyCells).toHaveLength(2);
+    expect(bodyCells[0].attributes?.style).toContain("text-align: center");
+    expect(bodyCells[0].attributes?.style).toContain("--mbox-table-kit-column-width: 1ch");
+    expect(bodyCells[1].attributes?.style).toContain("--mbox-table-kit-column-width: 2ch");
+  });
+
+  it("does not apply truncation when the delimiter and header column counts differ", () => {
+    expect(parseGfmDocument("| a | b |\n| --- |\n| 1 | 2 | 3 |").tables).toEqual([]);
+    expect(parseGfmDocument("| a |\n| --- | --- |\n| 1 | 2 | 3 |").tables).toEqual([]);
+  });
+
+  it("lowers a table followed by a lone pipe body line without table-cell decorations on that line", () => {
+    const input = "| a | b |\n| --- | --- |\n| 1 | 2 |\n|";
+    const lonePipeOffset = input.lastIndexOf("|");
+    const specs = specsFor(input);
+
+    expect(specs.some((spec) => spec.from >= lonePipeOffset)).toBe(false);
+  });
+
+  it("keeps a double-pipe body line as one physical empty cell plus one virtual cell", () => {
+    const specs = specsFor("| a | b |\n| --- | --- |\n||");
+    const bodyCellWidgets = specs.filter((spec) => spec.type === "widget" && (spec.from === 25 || spec.from === 26));
+
+    expect(bodyCellWidgets).toHaveLength(2);
   });
 
   it("renders the header raw (with a raw-cell class, no pipe hiding) when its line is active", () => {
@@ -71,6 +169,22 @@ describe("gfmTablePlugin", () => {
   it("lets a host override the monospace font through the same shared CSS variable as every other table", () => {
     expect(gfmTablePlugin().theme).toMatchObject({
       ".mbox-gfm-table": { fontFamily: expect.stringMatching(/^var\(--mbox-table-font-family, .*monospace\)$/) },
+    });
+  });
+
+  it("applies computed widths to rendered cells and releases them on active raw cells", () => {
+    expect(gfmTablePlugin().theme).toMatchObject({
+      ".mbox-gfm-table-cell": {
+        width: "var(--mbox-table-cell-width, var(--mbox-table-kit-column-width))",
+        maxWidth: "var(--mbox-table-kit-cell-max-width, 100%)",
+        minWidth: 0,
+        overflowWrap: "anywhere",
+      },
+      ".mbox-gfm-table-cell.mbox-gfm-table-raw-cell": {
+        width: "auto",
+        maxWidth: "none",
+        minWidth: "auto",
+      },
     });
   });
 });

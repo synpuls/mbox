@@ -1,4 +1,16 @@
 import type { ScrapboxLine, ScrapboxRange } from "./parser.js";
+// The scanner vocabulary -- per-parse instantiation, deferred matches, the
+// monotonic cursor -- lives in its own module; see its header for why each
+// exists.
+import {
+  createMonotonicCursor,
+  inlineMatchText,
+  instantiateInlinePattern,
+  type InlinePattern,
+  type InlineScannerFactory,
+  type InlinePatternScanner,
+  type InlineScanMatch,
+} from "./inline-scanner-kit.js";
 
 export interface ScrapboxTextNode extends ScrapboxRange {
   type: "text";
@@ -71,6 +83,7 @@ export interface ScrapboxIconNode extends ScrapboxRange {
   type: "icon";
   path: string;
   pathType: "root" | "relative";
+  repeatCount: number;
 }
 
 export interface ScrapboxFormulaNode extends ScrapboxRange {
@@ -98,45 +111,205 @@ interface InlineMatcher {
   create: (raw: string, from: number) => ScrapboxInlineNode;
 }
 
-interface InlinePatternMatch {
-  0: string;
-  index: number;
-}
-
-interface InlinePatternScanner {
-  exec: (text: string, from: number) => InlinePatternMatch | null;
-}
-
-type InlinePattern = RegExp | InlinePatternScanner;
-
 const imageExtension = "(?:png|jpe?g|gif|svg|webp)";
 // Gyazo URLs carry no file extension, so extension-based matching alone
-// misses them; matched by host + 32-hex id instead, mirroring the reference
-// parser (@progfay/scrapbox-parser)'s own Gyazo-specific pattern. Exported as
-// the single definition of "what a Gyazo URL looks like" -- image.ts's
-// default src resolver needs the same host+id shape (minus the optional
-// `/raw` this module allows) and builds its own regex on top of this rather
-// than hardcoding the pattern a second time.
-export const gyazoHostAndId = "https?://(?:[0-9a-z-]+\\.)?gyazo\\.com/[0-9a-f]{32}";
+// misses them; matched by the main host + 32-hex id instead. This pattern is
+// the regexp classifier used by strongImageRegExp. The single-bracket scanner
+// has a separate hand-written classifier below; their boundary agreement is
+// locked by tests until those parsing paths can share one implementation.
+//
+// The recorded observation excludes i.gyazo.com without establishing every
+// possible subdomain. mbox conservatively generalises that fact to exclude all
+// subdomains: a simpler rule than singling out `i`, but still an implementer
+// choice beyond what was observed. Scheme and id case, suffixes, and the other
+// existing axes are intentionally unchanged.
+const gyazoHostAndId = "https?://gyazo\\.com/[0-9a-f]{32}";
 const gyazoImageUrl = `${gyazoHostAndId}(?:/raw)?`;
-// A bare `https://gyazo.com/<id>` (no `/raw`, no extension) is still valid
-// Scrapbox image notation -- real Scrapbox (and its reference parser) treats
-// it as one. Whether that raw URL is actually fetchable as-is is a rendering
-// concern, not a classification one; see `ScrapboxImageSrcResolver` in
-// `image.ts` for where that's handled.
+// mbox classifies a bare `https://gyazo.com/<id>` (no `/raw`, no extension) as
+// image notation. Whether that raw URL is actually fetchable as-is is a
+// rendering concern, not a classification one; see `ScrapboxImageSrcResolver`
+// in `image.ts` for where that's handled.
 const imageUrl = `(?:https?://[^\\s\\[\\]]+\\.${imageExtension}(?:\\?[^\\[\\]\\s]+)?|${gyazoImageUrl})`;
 const codeRegExp = /`.*?`/;
 const strongImageRegExp = new RegExp(`\\[\\[${imageUrl}\\]\\]`, "i");
-const srcFirstImageRegExp = new RegExp(`\\[${imageUrl}(?:\\s+https?://[^\\s\\[\\]]+)?\\]`, "i");
-const linkFirstImageRegExp = new RegExp(`\\[https?://[^\\s\\[\\]]+\\s+${imageUrl}\\]`, "i");
-const imageUrlRegExp = new RegExp(`^${imageUrl}$`, "i");
 const isWhitespace = (character: string) => /\s/.test(character);
 const nextLineTerminator = (text: string, from: number) => {
-  const positions = [text.indexOf("\n", from), text.indexOf("\r", from), text.indexOf("\u2028", from), text.indexOf("\u2029", from)].filter(
-    (position) => position !== -1,
-  );
-  return positions.length === 0 ? -1 : Math.min(...positions);
+  for (let position = from; position < text.length; position += 1) {
+    const character = text[position];
+    if (character === "\n" || character === "\r" || character === "\u2028" || character === "\u2029") return position;
+  }
+  return -1;
 };
+
+function asciiEqualAt(text: string, position: number, expectedLowercase: string): boolean {
+  for (let index = 0; index < expectedLowercase.length; index += 1) {
+    const code = text.charCodeAt(position + index);
+    const lowercaseCode = code >= 65 && code <= 90 ? code + 32 : code;
+    if (lowercaseCode !== expectedLowercase.charCodeAt(index)) return false;
+  }
+  return true;
+}
+
+function httpSchemeLengthAt(text: string, position: number): 0 | 7 | 8 {
+  if (asciiEqualAt(text, position, "http://")) return 7;
+  if (asciiEqualAt(text, position, "https://")) return 8;
+  return 0;
+}
+
+function hasImageExtensionAt(text: string, end: number): boolean {
+  return (
+    (end >= 4 && asciiEqualAt(text, end - 4, ".png")) ||
+    (end >= 4 && asciiEqualAt(text, end - 4, ".jpg")) ||
+    (end >= 5 && asciiEqualAt(text, end - 5, ".jpeg")) ||
+    (end >= 4 && asciiEqualAt(text, end - 4, ".gif")) ||
+    (end >= 4 && asciiEqualAt(text, end - 4, ".svg")) ||
+    (end >= 5 && asciiEqualAt(text, end - 5, ".webp"))
+  );
+}
+
+function isHex(character: string): boolean {
+  const code = character.charCodeAt(0);
+  return (
+    (code >= 48 && code <= 57) ||
+    (code >= 65 && code <= 70) ||
+    (code >= 97 && code <= 102)
+  );
+}
+
+function isGyazoImageToken(text: string, start: number, end: number, schemeLength: number): boolean {
+  const rawSuffixLength = end >= 4 && asciiEqualAt(text, end - 4, "/raw") ? 4 : 0;
+  const idEnd = end - rawSuffixLength;
+  const idStart = idEnd - 32;
+  const hostSuffix = "gyazo.com/";
+  const hostSuffixStart = idStart - hostSuffix.length;
+  if (hostSuffixStart < start + schemeLength || !asciiEqualAt(text, hostSuffixStart, hostSuffix)) return false;
+  for (let position = idStart; position < idEnd; position += 1) {
+    if (!isHex(text[position]!)) return false;
+  }
+  return hostSuffixStart === start + schemeLength;
+}
+
+function isImageUrlToken(
+  text: string,
+  start: number,
+  end: number,
+  nextQuestion: (from: number) => number,
+): boolean {
+  const schemeLength = httpSchemeLengthAt(text, start);
+  if (schemeLength === 0) return false;
+
+  const question = nextQuestion(start + schemeLength);
+  const extensionEnd = question !== -1 && question < end ? question : end;
+  const hasValidQuery = extensionEnd === end || question + 1 < end;
+  if (hasValidQuery && hasImageExtensionAt(text, extensionEnd)) return true;
+  return isGyazoImageToken(text, start, end, schemeLength);
+}
+
+function isExternalLinkToken(text: string, start: number, end: number): boolean {
+  const schemeLength = httpSchemeLengthAt(text, start);
+  const openingBracket = text.indexOf("[", start);
+  return (
+    schemeLength !== 0 &&
+    end > start + schemeLength &&
+    (openingBracket === -1 || openingBracket >= end)
+  );
+}
+
+function createBracketedImageScanner(linkFirst: boolean, doubleBracket = false): InlineScannerFactory {
+  return {
+    createScanner() {
+      let source = "";
+      const openingMarker = doubleBracket ? "[[" : "[";
+      const closingMarker = doubleBracket ? "]]" : "]";
+      const closesNotationAt = (text: string, position: number) =>
+        text.startsWith(closingMarker, position) && (!doubleBracket || text[position + closingMarker.length] !== "]");
+      const findWhitespace = (from: number) => {
+        for (let position = from; position < source.length; position += 1) {
+          if (isWhitespace(source[position]!)) return position;
+        }
+        return -1;
+      };
+      const findNonWhitespace = (from: number) => {
+        for (let position = from; position < source.length; position += 1) {
+          if (!isWhitespace(source[position]!)) return position;
+        }
+        return -1;
+      };
+      let nextClosing = createMonotonicCursor((from) => source.indexOf(closingMarker, from));
+      let nextQuestion = createMonotonicCursor((from) => source.indexOf("?", from));
+      let nextWhitespace = createMonotonicCursor(findWhitespace);
+      let nextNonWhitespace = createMonotonicCursor(findNonWhitespace);
+
+      const setSource = (text: string) => {
+        source = text;
+        nextClosing = createMonotonicCursor((from) => source.indexOf(closingMarker, from));
+        nextQuestion = createMonotonicCursor((from) => source.indexOf("?", from));
+        nextWhitespace = createMonotonicCursor(findWhitespace);
+        nextNonWhitespace = createMonotonicCursor(findNonWhitespace);
+      };
+
+      const tokenEnd = (from: number) => {
+        const closing = nextClosing(from);
+        const whitespace = nextWhitespace(from);
+        if (closing === -1) return whitespace;
+        if (whitespace === -1) return closing;
+        return Math.min(closing, whitespace);
+      };
+
+      return {
+        exec(text, from) {
+          if (text !== source) setSource(text);
+          let opening = text.indexOf(openingMarker, from);
+
+          while (opening !== -1) {
+            const firstStart = opening + openingMarker.length;
+            const firstEnd = tokenEnd(firstStart);
+            if (firstEnd === -1) return null;
+
+            const firstIsImage = !linkFirst && isImageUrlToken(text, firstStart, firstEnd, nextQuestion);
+            const firstIsLink = linkFirst && isExternalLinkToken(text, firstStart, firstEnd);
+            if (closesNotationAt(text, firstEnd)) {
+              // A one-token double-bracket image retains the existing
+              // strongImage discriminator. This scanner changes only the
+              // observed two-token, src-first form.
+              if (firstIsImage && !doubleBracket) {
+                const closing = firstEnd;
+                return { index: opening, resolve: () => text.slice(opening, closing + closingMarker.length) };
+              }
+              opening = text.indexOf(openingMarker, opening + 1);
+              continue;
+            }
+            if ((!firstIsImage && !firstIsLink) || !isWhitespace(text[firstEnd]!)) {
+              opening = text.indexOf(openingMarker, opening + 1);
+              continue;
+            }
+
+            const secondStart = nextNonWhitespace(firstEnd);
+            if (secondStart === -1) return null;
+            const secondEnd = tokenEnd(secondStart);
+            if (secondEnd !== -1 && closesNotationAt(text, secondEnd)) {
+              const secondMatches = linkFirst
+                ? isImageUrlToken(text, secondStart, secondEnd, nextQuestion)
+                : isExternalLinkToken(text, secondStart, secondEnd);
+              if (secondMatches) {
+                const closing = secondEnd;
+                return { index: opening, resolve: () => text.slice(opening, closing + closingMarker.length) };
+              }
+            }
+
+            opening = text.indexOf(openingMarker, opening + 1);
+          }
+
+          return null;
+        },
+      };
+    },
+  };
+}
+
+const srcFirstImageScanner = createBracketedImageScanner(false);
+const linkFirstImageScanner = createBracketedImageScanner(true);
+const doubleBracketSrcFirstImageScanner = createBracketedImageScanner(false, true);
 
 // Marker characters from the character class in the decoration regexp below.
 const decorationMarkerCharacters = '!"#%&\'()*+,-./{|}<>_~';
@@ -187,21 +360,63 @@ const decorationScanner: InlinePatternScanner = {
   },
 };
 
-// Equivalent to /\[\$ [^\]]+\]/. A formula's first `]` is its only
-// possible terminator; if none exists, no later opener can match either.
-const formulaScanner: InlinePatternScanner = {
-  exec(text, from) {
-    let opening = text.indexOf("[$ ", from);
+// An inline formula ends on its line. Prefer the first ` ]` whose space is
+// part of the content; if there is none, use the first bare `]`. The three
+// searches advance independently: sharing them would either change their
+// meanings or reintroduce a quadratic scan on a different failure path.
+const formulaScanner: InlineScannerFactory = {
+  createScanner() {
+    let source = "";
+    let nextTerminator = (from: number) => nextLineTerminator(source, from);
+    let nextSpacedClosing = createMonotonicCursor((from) => source.indexOf(" ]", from));
+    let nextBareClosing = createMonotonicCursor((from) => source.indexOf("]", from));
 
-    while (opening !== -1) {
-      const contentStart = opening + 3;
-      const closing = text.indexOf("]", contentStart);
-      if (closing === -1) return null;
-      if (closing > contentStart) return { 0: text.slice(opening, closing + 1), index: opening };
-      opening = text.indexOf("[$ ", opening + 1);
-    }
+    const setSource = (text: string) => {
+      source = text;
+      // `nextLineTerminator` returns the first of four independently searched
+      // terminators. Keep that same minimum-of-four meaning, but make each
+      // search monotonic too: otherwise a present `\n` still leaves its three
+      // absent peers rescanning the whole tail for every candidate.
+      const nextLf = createMonotonicCursor((from) => source.indexOf("\n", from));
+      const nextCr = createMonotonicCursor((from) => source.indexOf("\r", from));
+      const nextLineSeparator = createMonotonicCursor((from) => source.indexOf("\u2028", from));
+      const nextParagraphSeparator = createMonotonicCursor((from) => source.indexOf("\u2029", from));
+      nextTerminator = (from) => {
+        const positions = [nextLf(from), nextCr(from), nextLineSeparator(from), nextParagraphSeparator(from)].filter(
+          (position) => position !== -1,
+        );
+        return positions.length === 0 ? -1 : Math.min(...positions);
+      };
+      nextSpacedClosing = createMonotonicCursor((from) => source.indexOf(" ]", from));
+      nextBareClosing = createMonotonicCursor((from) => source.indexOf("]", from));
+    };
 
-    return null;
+    return {
+      exec(text, from) {
+        if (text !== source) setSource(text);
+        let opening = text.indexOf("[$ ", from);
+
+        while (opening !== -1) {
+          const contentStart = opening + 3;
+          const lineEnd = nextTerminator(contentStart);
+          const spacedClosing = nextSpacedClosing(contentStart);
+          const bareClosing = nextBareClosing(contentStart);
+          const hasSpacedClosing = spacedClosing !== -1 && (lineEnd === -1 || spacedClosing + 1 < lineEnd);
+          const hasBareClosing = bareClosing !== -1 && (lineEnd === -1 || bareClosing < lineEnd);
+
+          // Spaced always wins, even when a bare closer appears earlier.
+          if (hasSpacedClosing || hasBareClosing) {
+            const closing = hasSpacedClosing ? spacedClosing + 1 : bareClosing;
+            return { 0: text.slice(opening, closing + 1), index: opening };
+          }
+
+          if (lineEnd === -1) return null;
+          opening = text.indexOf("[$ ", Math.max(opening + 1, lineEnd + 1));
+        }
+
+        return null;
+      },
+    };
   },
 };
 
@@ -209,48 +424,83 @@ const formulaScanner: InlinePatternScanner = {
 // intentionally unusual opening-bracket rule, then `.*?` selects the first
 // `]]` on the same line and `\]*` greedily absorbs the rest of that closing
 // bracket run.
-const strongScanner: InlinePatternScanner = {
-  exec(text, from) {
-    let opening = text.indexOf("[[", from);
+const strongScanner: InlineScannerFactory = {
+  createScanner() {
+    let source = "";
+    let nextTerminator = (from: number) => nextLineTerminator(source, from);
+    let nextClosing = createMonotonicCursor((from) => source.indexOf("]]", from));
 
-    while (opening !== -1) {
-      let contentStart = opening + 2;
-      if (text[contentStart] === "[") {
-        if (text[contentStart + 1] === "[" || contentStart + 1 >= text.length) {
-          opening = text.indexOf("[[", opening + 1);
-          continue;
+    const setSource = (text: string) => {
+      source = text;
+      // `nextLineTerminator` returns the first of four independently searched
+      // terminators. Keep that same minimum-of-four meaning, but make each
+      // search monotonic too: otherwise a present `\n` still leaves its three
+      // absent peers rescanning the whole tail for every candidate.
+      const nextLf = createMonotonicCursor((from) => source.indexOf("\n", from));
+      const nextCr = createMonotonicCursor((from) => source.indexOf("\r", from));
+      const nextLineSeparator = createMonotonicCursor((from) => source.indexOf("\u2028", from));
+      const nextParagraphSeparator = createMonotonicCursor((from) => source.indexOf("\u2029", from));
+      nextTerminator = (from) => {
+        const positions = [nextLf(from), nextCr(from), nextLineSeparator(from), nextParagraphSeparator(from)].filter(
+          (position) => position !== -1,
+        );
+        return positions.length === 0 ? -1 : Math.min(...positions);
+      };
+      nextClosing = createMonotonicCursor((from) => source.indexOf("]]", from));
+    };
+
+    return {
+      exec(text, from) {
+        // This scanner is instantiated for each parse. Resetting here keeps a
+        // cursor from becoming a plausible offset if that driver contract ever
+        // changes and reuses a scanner for another input.
+        if (text !== source) setSource(text);
+        let opening = text.indexOf("[[", from);
+
+        while (opening !== -1) {
+          let contentStart = opening + 2;
+          if (text[contentStart] === "[") {
+            if (text[contentStart + 1] === "[" || contentStart + 1 >= text.length) {
+              opening = text.indexOf("[[", opening + 1);
+              continue;
+            }
+            contentStart += 2;
+          } else if (contentStart >= text.length) {
+            return null;
+          } else {
+            contentStart += 1;
+          }
+
+          // Query the line boundary and closer independently for every candidate.
+          // Their monotonic cursors advance without rescanning; their matches and
+          // empty results describe different facts, so sharing one would be wrong.
+          const lineTerminator = nextTerminator(contentStart);
+          const closing = nextClosing(contentStart);
+          if (closing === -1 || (lineTerminator !== -1 && lineTerminator < closing)) {
+            if (lineTerminator === -1) return null;
+            // A candidate beginning up to three characters before the terminator
+            // can consume it in the regexp's initial unit (`[[\r` or `[[[\r`).
+            // All earlier candidates are blocked by `.*?`, so skip the whole
+            // failed line while retaining those boundary cases.
+            opening = text.indexOf("[[", Math.max(opening + 1, lineTerminator - 3));
+            continue;
+          }
+
+          let closingRunEnd = closing + 2;
+          while (text[closingRunEnd] === "]") closingRunEnd += 1;
+          return { 0: text.slice(opening, closingRunEnd), index: opening };
         }
-        contentStart += 2;
-      } else if (contentStart >= text.length) {
+
         return null;
-      } else {
-        contentStart += 1;
-      }
-
-      const closing = text.indexOf("]]", contentStart);
-      const lineTerminator = nextLineTerminator(text, contentStart);
-      if (closing === -1 || (lineTerminator !== -1 && lineTerminator < closing)) {
-        if (lineTerminator === -1) return null;
-        // A candidate beginning up to three characters before the terminator
-        // can consume it in the regexp's initial unit (`[[\r` or `[[[\r`).
-        // All earlier candidates are blocked by `.*?`, so skip the whole
-        // failed line while retaining those boundary cases.
-        opening = text.indexOf("[[", Math.max(opening + 1, lineTerminator - 3));
-        continue;
-      }
-
-      let closingRunEnd = closing + 2;
-      while (text[closingRunEnd] === "]") closingRunEnd += 1;
-      return { 0: text.slice(opening, closingRunEnd), index: opening };
-    }
-
-    return null;
+      },
+    };
   },
 };
 
 // This is deliberately a scanner instead of /\[https?:\/\/[^\s\[\]]+\s+[^\]]*[^\s]\]/.
-// The latter preserves `[` in a label (as Scrapbox does), but a failing exec
-// rescans the rest of an unclosed input from every subsequent `[`.
+// The latter preserves `[` in a label, which is the behaviour mbox wants, but
+// a failing exec rescans the rest of an unclosed input from every subsequent
+// `[`.
 const hrefFirstUrlScanner: InlinePatternScanner = {
   exec(text, from) {
     let opening = text.indexOf("[", from);
@@ -297,10 +547,66 @@ const hrefFirstUrlScanner: InlinePatternScanner = {
 };
 const contentFirstUrlRegExp = /\[[^[\]]*[^\s]\s+https?:\/\/[^\s\[\]]+\]/;
 const bracketedUrlRegExp = /\[https?:\/\/[^\s\[\]]+\]/;
-const bareUrlRegExp = /https?:\/\/[^\s]+/;
-const iconRegExp = /\[\/?[^[\]]+\.icon\]/i;
+const bareUrlScanner: InlineScannerFactory = {
+  createScanner() {
+    let source = "";
+    let nextHttp = createMonotonicCursor((from) => source.indexOf("http://", from));
+    let nextHttps = createMonotonicCursor((from) => source.indexOf("https://", from));
+
+    const setSource = (text: string) => {
+      source = text;
+      nextHttp = createMonotonicCursor((from) => source.indexOf("http://", from));
+      nextHttps = createMonotonicCursor((from) => source.indexOf("https://", from));
+    };
+
+    return {
+      exec(text, from) {
+        // The inline driver creates one scanner for each parse and keeps its
+        // input fixed while advancing `from`, so normally these cursors are
+        // built once. Reset them if that contract changes: a cursor position
+        // from another document would otherwise be a plausible, wrong index.
+        if (text !== source) setSource(text);
+        let http = nextHttp(from);
+        let https = nextHttps(from);
+
+        while (http !== -1 || https !== -1) {
+          const index = https === -1 || (http !== -1 && http < https) ? http : https;
+          const schemeLength = index === http ? 7 : 8;
+
+          if (index + schemeLength < text.length && !isWhitespace(text[index + schemeLength]!)) {
+            return {
+              index,
+              resolve: () => {
+                let end = index + schemeLength;
+                while (end < text.length && !isWhitespace(text[end]!)) end += 1;
+                return text.slice(index, end);
+              },
+            };
+          }
+
+          if (index === http) http = nextHttp(index + 1);
+          else https = nextHttps(index + 1);
+        }
+
+        return null;
+      },
+    };
+  },
+};
+// Scrapbox upstream recognizes only lowercase `.icon` (and lowercase `x`);
+// mbox's own notation intentionally has a separate, case-insensitive contract.
+const iconRegExp = /\[\/?[^[\]]+\.icon(?:[x*](?:[1-9]|1\d|20))?\]/;
 const internalLinkRegExp = /\[\/?[^[\]]+\]/;
-const hashTagRegExp = /(?<=^|\s)#\S+/;
+// A hashtag candidate is a non-whitespace run that begins with `#` and has at
+// least one non-`#` character. Keep this source shared by the boundary scanner
+// and the cursor scanner so they cannot silently grow different definitions.
+const hashTagTokenPattern = "#(?=\\S*[^#\\s])\\S+";
+const hashTagRegExp = new RegExp(`(?<=^|\\s)${hashTagTokenPattern}`);
+const hashTagTokenRegExp = new RegExp(`^${hashTagTokenPattern}$`);
+
+function isHashTagCandidate(candidate: string): boolean {
+  return hashTagTokenRegExp.test(candidate);
+}
 
 function textNode(value: string, from: number): ScrapboxTextNode {
   return { type: "text", from, to: from + value.length, value };
@@ -352,6 +658,13 @@ function createStrongNode(raw: string, from: number): ScrapboxStrongNode {
   const to = from + raw.length;
   const contentFrom = from + 2;
   const contentTo = to - 2;
+  const content = raw.slice(2, -2);
+  // A double-bracket icon is still represented as a strong node containing an
+  // icon. Rendering, rather than parsing, decides whether that exact shape
+  // receives the larger icon treatment.
+  const bracketedContent = `[${content}]`;
+  const iconMatch = iconRegExp.exec(bracketedContent);
+  const icon = iconMatch?.[0] === bracketedContent ? createIconNode(bracketedContent, contentFrom - 1) : undefined;
   return {
     type: "strong",
     from,
@@ -359,7 +672,7 @@ function createStrongNode(raw: string, from: number): ScrapboxStrongNode {
     openingMarker: { from, to: contentFrom },
     closingMarker: { from: contentTo, to },
     content: { from: contentFrom, to: contentTo },
-    children: parseScrapboxInlineNested(raw.slice(2, -2), contentFrom, true),
+    children: icon === undefined ? parseScrapboxInlineNested(content, contentFrom, true) : [{ ...icon, from: contentFrom, to: contentTo }],
   };
 }
 
@@ -418,10 +731,12 @@ function createExternalLinkNode(raw: string, from: number): ScrapboxExternalLink
 }
 
 function createImageNode(raw: string, from: number): ScrapboxImageNode {
+  const markerWidth = raw.startsWith("[[") ? 2 : 1;
   const spaceIndex = raw.search(/\s/);
-  const first = spaceIndex === -1 ? raw.slice(1, -1) : raw.slice(1, spaceIndex);
-  const second = spaceIndex === -1 ? "" : raw.slice(spaceIndex, -1).replace(/^\s+/, "");
-  const [src, link] = imageUrlRegExp.test(second) ? [second, first] : [first, second];
+  const first = spaceIndex === -1 ? raw.slice(markerWidth, -markerWidth) : raw.slice(markerWidth, spaceIndex);
+  const second = spaceIndex === -1 ? "" : raw.slice(spaceIndex, -markerWidth).replace(/^\s+/, "");
+  const secondQuestion = createMonotonicCursor((position: number) => second.indexOf("?", position));
+  const [src, link] = isImageUrlToken(second, 0, second.length, secondQuestion) ? [second, first] : [first, second];
 
   return { type: "image", from, to: from + raw.length, src, link };
 }
@@ -432,23 +747,31 @@ function createStrongImageNode(raw: string, from: number): ScrapboxStrongImageNo
 
 function createFormulaNode(raw: string, from: number): ScrapboxFormulaNode {
   const to = from + raw.length;
+  // `[$ ]` is a bare empty formula: its only space is the syntax separator,
+  // before contentStart. A spaced closer needs one additional source character.
+  const spacedClosing = raw.length > 4 && raw.at(-2) === " ";
+  const contentTo = to - (spacedClosing ? 2 : 1);
   return {
     type: "formula",
     from,
     to,
-    expression: raw.slice(3, -1),
-    content: { from: from + 3, to: to - 1 },
+    expression: raw.slice(3, spacedClosing ? -2 : -1),
+    content: { from: from + 3, to: contentTo },
   };
 }
 
 function createIconNode(raw: string, from: number): ScrapboxIconNode {
-  const path = raw.slice(1, -1).replace(/\.icon$/i, "");
+  const content = raw.slice(1, -1);
+  const repeatMatch = content.match(/[x*](\d+)$/);
+  const repeatCount = repeatMatch === null ? 1 : Number(repeatMatch[1]);
+  const path = content.replace(/[x*]\d+$/, "").replace(/\.icon$/, "");
   return {
     type: "icon",
     from,
     to: from + raw.length,
     path,
     pathType: path.startsWith("/") ? "root" : "relative",
+    repeatCount,
   };
 }
 
@@ -469,11 +792,12 @@ const matchers: InlineMatcher[] = [
   { nestedAllowed: false, patterns: [decorationScanner], create: createDecorationNode },
   { nestedAllowed: true, patterns: [formulaScanner], create: createFormulaNode },
   { nestedAllowed: false, patterns: [strongImageRegExp], create: createStrongImageNode },
+  { nestedAllowed: false, patterns: [doubleBracketSrcFirstImageScanner], create: createImageNode },
   { nestedAllowed: false, patterns: [strongScanner], create: createStrongNode },
-  { nestedAllowed: true, patterns: [srcFirstImageRegExp, linkFirstImageRegExp], create: createImageNode },
+  { nestedAllowed: true, patterns: [srcFirstImageScanner, linkFirstImageScanner], create: createImageNode },
   {
     nestedAllowed: true,
-    patterns: [hrefFirstUrlScanner, contentFirstUrlRegExp, bracketedUrlRegExp, bareUrlRegExp],
+    patterns: [hrefFirstUrlScanner, contentFirstUrlRegExp, bracketedUrlRegExp, bareUrlScanner],
     create: createExternalLinkNode,
   },
   { nestedAllowed: true, patterns: [iconRegExp], create: createIconNode },
@@ -487,7 +811,7 @@ const matchers: InlineMatcher[] = [
  * Tokens are selected by their leftmost start position. Matcher order, then
  * pattern order, breaks ties at the same position. Each pattern owns a global
  * RegExp clone and caches its next match, so its scan position only advances
- * through this input once. `nested` content skips matchers Scrapbox does not
+ * through this input once. `nested` content skips the matchers mbox does not
  * re-enter (code, decoration, strong).
  */
 export function parseScrapboxInline(text: string, base = 0): ScrapboxInlineNode[] {
@@ -496,23 +820,29 @@ export function parseScrapboxInline(text: string, base = 0): ScrapboxInlineNode[
 
 function parseScrapboxInlineNested(text: string, base: number, nested: boolean): ScrapboxInlineNode[] {
   interface PatternScanner {
-    pattern: InlinePattern;
-    next: InlinePatternMatch | RegExpExecArray | null;
+    pattern: RegExp | InlinePatternScanner;
+    next: InlineScanMatch | RegExpExecArray | null;
     initialized: boolean;
   }
 
+  // Holds the MATCH, not its text. Arbitration below compares `index` only, and
+  // a deferred match has no text to read until it wins -- which is enforced by
+  // the type, not by discipline.
   interface Candidate {
     matcher: InlineMatcher;
-    raw: string;
-    index: number;
+    match: InlineScanMatch | RegExpExecArray;
   }
 
+  // Every pattern is instantiated here, once per parse. That is the default
+  // structure for stateful scanners; explicit input-change resets additionally
+  // guard scanners that could otherwise reuse one document's positions for
+  // another when this driver contract changes.
   const scanners = matchers.flatMap((matcher) =>
     nested && !matcher.nestedAllowed
       ? []
       : matcher.patterns.map((pattern) => {
           const scanner: PatternScanner = {
-            pattern: pattern instanceof RegExp ? new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`) : pattern,
+            pattern: instantiateInlinePattern(pattern),
             next: null,
             initialized: false,
           };
@@ -540,9 +870,8 @@ function parseScrapboxInlineNested(text: string, base: number, nested: boolean):
       }
 
       const match = scanner.next;
-      if (match !== null) {
-        const next = { matcher, raw: match[0], index: match.index };
-        if (candidate === null || next.index < candidate.index) candidate = next;
+      if (match !== null && (candidate === null || match.index < candidate.match.index)) {
+        candidate = { matcher, match };
       }
 
       // The old slice-and-exec parser treated every segment start as line
@@ -551,8 +880,8 @@ function parseScrapboxInlineNested(text: string, base: number, nested: boolean):
       if (scanner.pattern instanceof RegExp && scanner.pattern.source === hashTagRegExp.source && text[cursor] === "#") {
         let end = cursor + 1;
         while (end < text.length && !/\s/.test(text[end])) end += 1;
-        if (end > cursor + 1 && (candidate === null || cursor < candidate.index)) {
-          candidate = { matcher, raw: text.slice(cursor, end), index: cursor };
+        if (end > cursor + 1 && isHashTagCandidate(text.slice(cursor, end)) && (candidate === null || cursor < candidate.match.index)) {
+          candidate = { matcher, match: { index: cursor, resolve: () => text.slice(cursor, end) } };
         }
       }
     }
@@ -562,9 +891,12 @@ function parseScrapboxInlineNested(text: string, base: number, nested: boolean):
       break;
     }
 
-    if (candidate.index > cursor) nodes.push(textNode(text.slice(cursor, candidate.index), base + cursor));
-    nodes.push(candidate.matcher.create(candidate.raw, base + candidate.index));
-    cursor = candidate.index + candidate.raw.length;
+    // Only now is the text produced -- for the one candidate that won.
+    const raw = inlineMatchText(candidate.match);
+    const index = candidate.match.index;
+    if (index > cursor) nodes.push(textNode(text.slice(cursor, index), base + cursor));
+    nodes.push(candidate.matcher.create(raw, base + index));
+    cursor = index + raw.length;
   }
 
   return nodes;
@@ -576,5 +908,5 @@ function parseScrapboxInlineNested(text: string, base: number, nested: boolean):
  */
 export function parseScrapboxLineInline(input: string, line: ScrapboxLine): ScrapboxInlineNode[] {
   const start = line.numberMarker ? line.numberMarker.to : line.content.from;
-  return parseScrapboxInline(input.slice(start, line.to), start);
+  return parseScrapboxInline(input.slice(start, line.logicalTo), start);
 }

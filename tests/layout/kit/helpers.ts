@@ -55,6 +55,9 @@ export interface OpenLayoutFixtureOptions {
     | "scrapboxPresentation"
     | "scrapboxInlineCodeHighlight"
     | "scrapboxComplete"
+    | "scrapboxIcon"
+    | "gfmImagePreview"
+    | "gfmMath"
     | "none";
   readonly?: boolean;
   labelledby?: boolean;
@@ -121,6 +124,14 @@ export async function openLayoutFixture(page: Page, options: OpenLayoutFixtureOp
 
   await page.goto(`/demos/layout-fixture.html${params.size > 0 ? `?${params}` : ""}`);
   await expect.poll(async () => page.evaluate(() => Boolean(window.__mboxLayoutFixture?.view))).toBe(true);
+
+  if (options.plugins) {
+    // The fixture falls back to `default` for a mode it does not know, so a
+    // typo would otherwise give a working editor with the wrong plugins, and
+    // the resulting failure would read as a product bug. Fail here instead.
+    const resolved = await page.evaluate(() => window.__mboxLayoutFixture?.pluginMode);
+    expect(resolved, `the fixture has no plugin mode named "${options.plugins}"`).toBe(options.plugins);
+  }
 }
 
 export async function routeSvgTestImage(
@@ -136,6 +147,51 @@ export async function routeSvgTestImage(
       body: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="${fill}"/></svg>`,
     }),
   );
+}
+
+/**
+ * Delete every rule in the fixture's own stylesheets whose selector mentions
+ * `selectorSubstring`, and report how many went.
+ *
+ * The layout fixture loads `demos/styles.css`. When a demo rule and a library
+ * rule do the same job, deleting the library's rule changes nothing visible
+ * and its spec stays green -- the library rule is never actually under test.
+ *
+ * Overriding the demo rule from a spec does not fix that: an added rule has to
+ * win on specificity against the plugin theme's own class selectors, and when
+ * it does it silences the very thing being checked. Removing the host rule
+ * leaves the library rule alone and visible.
+ *
+ * Only same-origin sheets can be enumerated, which is every sheet this fixture
+ * loads. The count is returned so a spec can assert it removed something --
+ * a helper that quietly matched nothing would make the test pass for the wrong
+ * reason.
+ */
+export async function removeHostStyleRules(page: Page, selectorSubstring: string): Promise<number> {
+  return page.evaluate((needle) => {
+    let removed = 0;
+    for (const sheet of Array.from(document.styleSheets)) {
+      let rules: CSSRuleList;
+      try {
+        rules = sheet.cssRules;
+      } catch {
+        continue; // Cross-origin sheet; the fixture loads none, but do not throw.
+      }
+      for (let index = rules.length - 1; index >= 0; index -= 1) {
+        const rule = rules[index];
+        if (!(rule instanceof CSSStyleRule) || !rule.selectorText.includes(needle)) continue;
+        // Skip CodeMirror's own injected theme rules. style-mod scopes them
+        // under a generated class starting `\u037C` (verified against the
+        // running fixture: `.\u037Ct .mbox-gfm-table-cell ...`), a character no
+        // hand-written selector uses. Deleting those would remove the LIBRARY's
+        // rule -- the thing under test -- leaving the spec checking nothing.
+        if (rule.selectorText.includes("\u037C")) continue;
+        sheet.deleteRule(index);
+        removed += 1;
+      }
+    }
+    return removed;
+  }, selectorSubstring);
 }
 
 export async function addImageSizingCSS(page: Page, width: string): Promise<void> {
@@ -480,12 +536,14 @@ declare global {
   interface Window {
     __mboxLayoutFixture?: {
       view: unknown;
+      pluginMode: string;
       setDoc: (doc: string, selection?: number, focus?: boolean) => void;
       setSelection: (anchor: number, head?: number) => void;
       focus: () => void;
       selectionHead: () => number;
       selectionCoords: () => DOMRect | null;
       coordsAtPos: (pos: number) => DOMRect | null;
+      scrollIntoView: (pos: number) => void;
       rectForText: (text: string) => DOMRect | null;
     };
   }

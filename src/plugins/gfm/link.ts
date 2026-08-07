@@ -1,8 +1,11 @@
 import { WidgetType } from "@codemirror/view";
-import type { Text } from "@codemirror/state";
 import type { MboxDecorationSpec, MboxPlugin } from "../../editor/plugin.js";
-import type { GfmDocument } from "./parser.js";
+import { removeGfmEscapeBackslashes } from "./parser.js";
+import { gfmImageClassNames, gfmImagePreviewEnabled } from "./image.js";
+import type { GfmDocument, GfmLinkLabelNode } from "./parser.js";
 import { getGfmDocumentFromState } from "./parser-cache.js";
+import { gfmInlineCodeClassName } from "./inline-code.js";
+import { gfmInlineClassNames } from "./inline.js";
 import { createAnchorElement, createInactiveInlineNotationSpecs } from "../inline-notation-kit.js";
 import { isLineSpanActive } from "./active-lines.js";
 
@@ -51,6 +54,9 @@ export class GfmLinkWidget extends WidgetType {
     readonly href: string,
     readonly autolink: boolean,
     readonly external: boolean,
+    readonly label?: readonly GfmLinkLabelNode[],
+    readonly source?: string,
+    readonly renderImages = false,
   ) {
     super();
   }
@@ -62,35 +68,117 @@ export class GfmLinkWidget extends WidgetType {
       this.text === target.text &&
       this.href === target.href &&
       this.autolink === target.autolink &&
-      this.external === target.external
+      this.external === target.external &&
+      this.renderImages === target.renderImages &&
+      this.labelSignature() === target.labelSignature()
     );
   }
 
   toDOM(): HTMLElement {
     const className = this.autolink ? `${gfmLinkClassName} ${gfmLinkClassName}-autolink` : gfmLinkClassName;
-    return createAnchorElement({
+    const anchor = createAnchorElement({
       href: this.href,
       text: this.text,
       className,
       attributes: this.external ? { target: "_blank", rel: "noreferrer" } : undefined,
     });
+    renderLinkLabel(anchor, this.text, this.label, this.source, this.renderImages);
+    return anchor;
+  }
+
+  private labelSignature(): string {
+    return JSON.stringify(this.label ?? null);
   }
 }
 
 class GfmUnsafeLinkWidget extends WidgetType {
-  constructor(readonly text: string) {
+  constructor(
+    readonly text: string,
+    readonly label?: readonly GfmLinkLabelNode[],
+    readonly source?: string,
+    readonly renderImages = false,
+  ) {
     super();
   }
 
   eq(other: WidgetType): boolean {
-    return other instanceof GfmUnsafeLinkWidget && this.text === other.text;
+    return (
+      other instanceof GfmUnsafeLinkWidget
+      && this.text === other.text
+      && this.renderImages === other.renderImages
+      && JSON.stringify(this.label ?? null) === JSON.stringify(other.label ?? null)
+    );
   }
 
   toDOM(): HTMLElement {
     const span = document.createElement("span");
     span.className = gfmUnsafeLinkClassName;
-    span.textContent = this.text;
+    renderLinkLabel(span, this.text, this.label, this.source, this.renderImages);
     return span;
+  }
+}
+
+/** Builds label DOM only from the parser's restricted source-range projection.
+ * This is the renderer half of the trust boundary: unknown nodes, including
+ * HTML and nested links, are always text nodes made from their raw source. */
+function renderLinkLabel(
+  parent: HTMLElement,
+  fallbackText: string,
+  label: readonly GfmLinkLabelNode[] | undefined,
+  source: string | undefined,
+  renderImages: boolean,
+): void {
+  if (label === undefined || label.length === 0 || source === undefined) {
+    parent.textContent = fallbackText;
+    return;
+  }
+  parent.replaceChildren(...label.map((node) => renderLinkLabelNode(node, source, renderImages)));
+}
+
+function renderLinkLabelNode(node: GfmLinkLabelNode, source: string, renderImages: boolean): Node {
+  switch (node.kind) {
+    case "emphasis":
+    case "strong":
+    case "delete": {
+      const element = document.createElement(node.kind === "delete" ? "del" : node.kind === "emphasis" ? "em" : "strong");
+      element.className = gfmInlineClassNames[node.kind];
+      element.replaceChildren(...node.children.map((child) => renderLinkLabelNode(child, source, renderImages)));
+      return element;
+    }
+    case "inlineCode": {
+      const code = document.createElement("code");
+      code.className = gfmInlineCodeClassName;
+      code.append(document.createTextNode(source.slice(node.content.from, node.content.to)));
+      return code;
+    }
+    case "break":
+      return document.createElement("br");
+    case "text":
+      return document.createTextNode(removeGfmEscapeBackslashes(source.slice(node.from, node.to)));
+    case "image": {
+      // `[![alt](img)](link)` is plain CommonMark, and it means `<a><img></a>`.
+      // The anchor is already this widget, so the image only has to become an
+      // `<img>` inside it -- which also keeps the destination on the link
+      // plugin's allowlist-checked path rather than handing a URL to another
+      // plugin.
+      //
+      // Only when the host renders pictures at all. With `renderMode: "token"`
+      // the alt text is the whole point, and a link label is no exception.
+      if (!renderImages || node.url === undefined) {
+        return document.createTextNode(node.text);
+      }
+      const image = document.createElement("img");
+      image.className = gfmImageClassNames.element;
+      image.src = node.url;
+      image.alt = node.text;
+      image.loading = "lazy";
+      image.decoding = "async";
+      return image;
+    }
+    case "footnoteReference":
+      return document.createTextNode(node.text);
+    case "unknown":
+      return document.createTextNode(source.slice(node.from, node.to));
   }
 }
 
@@ -123,21 +211,27 @@ function hasAbsoluteHttpScheme(href: string, parsedUrl: URL): boolean {
 
 function createGfmLinkSpecs(
   document: GfmDocument,
+  source: string | { sliceString(from: number, to: number): string },
   activeLines: Set<number>,
-  doc: Text,
   linkUrl: (url: string) => string,
   allowedProtocols: ReadonlySet<string>,
+  renderImages: boolean,
 ): MboxDecorationSpec[] {
   // Reveal the raw link on any active line it touches (links rarely span lines,
   // but the same any-line rule keeps it consistent with inline spans).
   return document.links.flatMap((link) =>
-    createInactiveInlineNotationSpecs(link, isLineSpanActive(link, activeLines), () => {
-      const text = doc.sliceString(link.textFrom, link.textTo);
+    createInactiveInlineNotationSpecs(link, isLineSpanActive(link, activeLines), source, () => {
+      // The label's nested inline markup becomes DOM (see renderLinkLabel),
+      // but `text` stays the recursive plain-text projection: the table grid
+      // measures this exact string, and rendered widths would need a separate
+      // measurement model. Anchor glyph widths remain a text-width
+      // approximation, like the table footnote chip.
+      const text = link.text;
       const href = linkUrl(link.url);
       const parsedUrl = parseAllowedLinkHref(href, allowedProtocols);
       return parsedUrl
-        ? new GfmLinkWidget(text, href, link.autolink, hasAbsoluteHttpScheme(href, parsedUrl))
-        : new GfmUnsafeLinkWidget(text);
+        ? new GfmLinkWidget(text, href, link.autolink, hasAbsoluteHttpScheme(href, parsedUrl), link.label, link.labelSource, renderImages)
+        : new GfmUnsafeLinkWidget(text, link.label, link.labelSource, renderImages);
     }),
   );
 }
@@ -150,10 +244,15 @@ export function gfmLinkPlugin(options: GfmLinkOptions = {}): MboxPlugin {
     decorations: (context) =>
       createGfmLinkSpecs(
         getGfmDocumentFromState(context.state),
-        context.activeLineNumbers,
         context.state.doc,
+        context.activeLineNumbers,
         linkUrl,
         allowedProtocols,
+        // Whether pictures are drawn at all is the image plugin's setting, and
+        // a link label is not an exception to it. Read through the same facet
+        // the table plugin uses, so a host assembling plugins by hand gets the
+        // same answer as one using the bundle.
+        context.state.facet(gfmImagePreviewEnabled),
       ),
   };
 }

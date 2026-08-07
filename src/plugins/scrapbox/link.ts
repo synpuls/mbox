@@ -3,9 +3,9 @@ import { createContentMarkSpec, type MboxDecorationSpec, type MboxPlugin, type M
 import type { MboxActiveLineNumbers } from "../../editor/focused-line.js";
 import type { ScrapboxInlineNode } from "./inline.js";
 import { collectScrapboxInlineNodeResults } from "./inline-walker.js";
-import type { ScrapboxDocument } from "./parser.js";
+import type { ScrapboxDocument, ScrapboxLine } from "./parser.js";
 import { getScrapboxDocumentFromState } from "./parser-cache.js";
-import { scrapboxBlockLineNumbers } from "./visible-lines.js";
+import { scrapboxLinkSkippedLineNumbers } from "./visible-lines.js";
 import { createAnchorElement } from "../inline-notation-kit.js";
 
 export const scrapboxLinkClassName = "mbox-scrapbox-link";
@@ -13,6 +13,8 @@ export const scrapboxUrlClassName = "mbox-scrapbox-url";
 export const scrapboxHashTagClassName = "mbox-scrapbox-hashtag";
 export const scrapboxIconClassName = "mbox-scrapbox-icon";
 export const scrapboxIconImageClassName = "mbox-scrapbox-icon-image";
+export const scrapboxStrongIconClassName = "mbox-scrapbox-icon-strong";
+export const scrapboxStrongIconMeasureClassName = "mbox-scrapbox-icon-strong-measure";
 export const scrapboxPageMissingClassName = "mbox-scrapbox-page-missing";
 
 export const scrapboxLinkClassNames = {
@@ -20,6 +22,7 @@ export const scrapboxLinkClassNames = {
   url: scrapboxUrlClassName,
   hashTag: scrapboxHashTagClassName,
   icon: scrapboxIconClassName,
+  strongIcon: scrapboxStrongIconClassName,
   pageMissing: scrapboxPageMissingClassName,
 };
 
@@ -108,6 +111,8 @@ export class ScrapboxIconWidget extends WidgetType {
     private readonly href: string,
     private readonly name: string,
     private readonly iconUrl: string | undefined,
+    private readonly repeatCount = 1,
+    private readonly strong = false,
   ) {
     super();
   }
@@ -117,7 +122,9 @@ export class ScrapboxIconWidget extends WidgetType {
       other instanceof ScrapboxIconWidget &&
       this.href === other.href &&
       this.name === other.name &&
-      this.iconUrl === other.iconUrl
+      this.iconUrl === other.iconUrl &&
+      this.repeatCount === other.repeatCount &&
+      this.strong === other.strong
     );
   }
 
@@ -135,7 +142,26 @@ export class ScrapboxIconWidget extends WidgetType {
     } else {
       anchor.textContent = this.name;
     }
-    return anchor;
+    if (this.repeatCount === 1 && !this.strong) return anchor;
+    const container = document.createElement("span");
+    container.className = this.strong ? `${scrapboxIconClassName} ${scrapboxStrongIconClassName}` : scrapboxIconClassName;
+    container.append(anchor);
+    for (let index = 1; index < this.repeatCount; index += 1) container.append(anchor.cloneNode(true));
+    return container;
+  }
+}
+
+class ScrapboxStrongIconMeasureWidget extends WidgetType {
+  eq(other: WidgetType): boolean {
+    return other instanceof ScrapboxStrongIconMeasureWidget;
+  }
+
+  toDOM(): HTMLElement {
+    const measure = document.createElement("span");
+    measure.className = scrapboxStrongIconMeasureClassName;
+    measure.setAttribute("aria-hidden", "true");
+    measure.style.pointerEvents = "none";
+    return measure;
   }
 }
 
@@ -173,28 +199,94 @@ function withMissingPageClass(baseClassName: string, pageName: string, resolvers
 }
 
 /**
+ * The text a link-shaped inline node contributes after this module renders it.
+ * Keeping this beside the widgets makes their visible labels a single
+ * responsibility: consumers such as table measurement project this function's
+ * result instead of reimplementing Scrapbox link grammar.
+ */
+function linkDisplayText(node: ScrapboxInlineNode): string | undefined {
+  switch (node.type) {
+    case "icon":
+      return (node.path.split("/").pop() ?? node.path).repeat(node.repeatCount);
+    case "internalLink":
+      return node.href;
+    case "externalLink":
+      return node.content || node.href;
+    case "hashTag":
+      return `#${node.href}`;
+    default:
+      return undefined;
+  }
+}
+
+function iconDisplayName(path: string): string {
+  return path.split("/").pop() ?? path;
+}
+
+/**
+ * @internal Exported for focused projection tests and table-kit integration;
+ * not part of the notation bundle's public API.
+ *
+ * Project a range as its link widgets display it. This belongs in the link
+ * module because it owns both the widget replacements and their labels;
+ * `table.ts` only asks for the projection to measure a cell. Icons always
+ * project to the final page-name segment (`[alice/bob.icon]` becomes `bob`),
+ * independently of `iconUrl`: without a resolver this exactly matches the
+ * text fallback. With a resolver the final segment is usually wider than the
+ * roughly 1em image, but that is not guaranteed: it depends on the name
+ * length, the loaded image's aspect ratio, and the host cell box. A one-letter
+ * name reserves only 1ch, which can be narrower than 1em.
+ *
+ * Work-list 4-4 records the measured host interaction: the fixture's square
+ * icon fits because its cell has extra host width, while a wide image crosses
+ * its cell. This projection remains text-only; it cannot promise image fit.
+ */
+export function projectScrapboxLinkDisplayValue(
+  input: string,
+  line: ScrapboxLine,
+  from: number,
+  to: number,
+): string | undefined {
+  const links = collectScrapboxInlineNodeResults(line.inline, (node) => {
+    const text = linkDisplayText(node);
+    return text !== undefined && node.from >= from && node.to <= to ? [{ from: node.from, to: node.to, text }] : [];
+  });
+  if (links.length === 0) return undefined;
+
+  let cursor = from;
+  let value = "";
+  for (const link of links) {
+    if (link.from < cursor) continue;
+    value += input.slice(cursor, link.from) + link.text;
+    cursor = link.to;
+  }
+  return value + input.slice(cursor, to);
+}
+
+/**
  * Build the decoration specs for one link-shaped inline node.
  *
- * Real Scrapbox keeps a page/external/hash link colored even while its line
- * is focused -- the raw brackets are revealed, but the whole span (brackets
- * included) stays wrapped in the same link styling, confirmed by inspecting
- * scrapbox.io's own DOM (an unclickable `<span class="link">` replaces the
- * `<a>`, both carrying the link color). The icon widget is left as-is here:
- * real Scrapbox renders the raw `[name.icon]` text *and* the icon image side
- * by side on the active line, a dual-render this plugin does not attempt.
+ * A page/external/hash link stays coloured even while its line is focused:
+ * the raw brackets are revealed, but the whole span (brackets included) stays
+ * wrapped in the same link styling, so the text under the cursor does not
+ * change colour as you move into it. The anchor itself is dropped on an active
+ * line -- a clickable link would fight the caret -- and only the colour
+ * survives. The icon widget is left as-is here: showing the raw `[name.icon]`
+ * text *and* the icon image side by side is a dual-render this plugin does not
+ * attempt.
  */
 function collectLinkSpecs(node: ScrapboxInlineNode, resolvers: ScrapboxLinkResolvers, active: boolean): MboxDecorationSpec[] {
   switch (node.type) {
     case "icon": {
       if (active) return [];
       const href = pageHref(node.path, node.pathType, resolvers.pageUrl);
-      const name = node.path.split("/").pop() ?? node.path;
+      const name = iconDisplayName(node.path);
       return [
         replaceWithWidget(
           node.from,
           node.to,
           // Pass the raw icon name straight through; the consumer builds the URL.
-          new ScrapboxIconWidget(href, name, resolvers.iconUrl?.(node.path)),
+          new ScrapboxIconWidget(href, name!, resolvers.iconUrl?.(node.path), node.repeatCount),
         ),
       ];
     }
@@ -239,17 +331,35 @@ function collectLinkSpecs(node: ScrapboxInlineNode, resolvers: ScrapboxLinkResol
   }
 }
 
+function isStrongIcon(node: ScrapboxInlineNode): node is Extract<ScrapboxInlineNode, { type: "strong" }> & { children: [Extract<ScrapboxInlineNode, { type: "icon" }>] } {
+  return node.type === "strong" && node.children.length === 1 && node.children[0]?.type === "icon";
+}
+
+function collectLineLinkSpecs(nodes: ScrapboxInlineNode[], resolvers: ScrapboxLinkResolvers, active: boolean): MboxDecorationSpec[] {
+  return nodes.flatMap((node) => {
+    if (isStrongIcon(node)) {
+      const icon = node.children[0];
+      if (active) return [{ type: "widget" as const, from: node.from, side: -1, widget: new ScrapboxStrongIconMeasureWidget() }];
+      const href = pageHref(icon.path, icon.pathType, resolvers.pageUrl);
+      const name = iconDisplayName(icon.path);
+      return [replaceWithWidget(node.from, node.to, new ScrapboxIconWidget(href, name, resolvers.iconUrl?.(icon.path), icon.repeatCount, true))];
+    }
+    const own = collectLinkSpecs(node, resolvers, active);
+    return node.type === "decoration" || node.type === "strong" ? [...own, ...collectLineLinkSpecs(node.children, resolvers, active)] : own;
+  });
+}
+
 function createScrapboxLinkSpecs(
   document: ScrapboxDocument,
   activeLines: MboxActiveLineNumbers,
   resolvers: ScrapboxLinkResolvers = {},
 ): MboxDecorationSpec[] {
-  const blockLineNumbers = scrapboxBlockLineNumbers(document);
+  const skippedLineNumbers = scrapboxLinkSkippedLineNumbers(document);
 
   return document.lines.flatMap((line) => {
-    if (blockLineNumbers.has(line.line)) return [];
+    if (skippedLineNumbers.has(line.line)) return [];
     const active = activeLines.has(line.line);
-    return collectScrapboxInlineNodeResults(line.inline, (node) => collectLinkSpecs(node, resolvers, active));
+    return collectLineLinkSpecs(line.inline, resolvers, active);
   });
 }
 
@@ -265,6 +375,20 @@ export function scrapboxLinkPlugin(options: ScrapboxLinkPluginOptions = {}): Mbo
       [`.${scrapboxIconImageClassName}`]: {
         height: "1em",
         width: "auto",
+        verticalAlign: "text-bottom",
+      },
+      [`.${scrapboxStrongIconClassName} .${scrapboxIconImageClassName}`]: {
+        height: "calc(var(--mbox-scrapbox-icon-strong-scale, 3) * 1em)",
+      },
+      [`.${scrapboxStrongIconMeasureClassName}`]: {
+        // Repeats deliberately have no measure widget: their wrapped height
+        // cannot be reproduced by a zero-width box, and upstream's focused-row
+        // behaviour for repeats has not been observed.
+        display: "inline-block",
+        width: "0",
+        height: "calc(var(--mbox-scrapbox-icon-strong-scale, 3) * 1em)",
+        visibility: "hidden",
+        pointerEvents: "none",
         verticalAlign: "text-bottom",
       },
     },

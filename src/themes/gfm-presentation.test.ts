@@ -5,9 +5,9 @@ import { gfmInlineCodeClassName } from "../plugins/gfm/inline-code.js";
 import { gfmCodeBlockClassNames } from "../plugins/gfm/code-block.js";
 import { gfmDefaultPresentationThemeSpec } from "./gfm-presentation.js";
 
-// Values mirror github-markdown-css (github-markdown-light.css, fetched
-// 2026-07-05) so the opt-in GFM presentation matches GitHub's own rendering
-// instead of an arbitrary in-house palette.
+// These assertions pin mbox's own default values for the GFM namespace, so a
+// change to any of them is deliberate rather than incidental. They are not a
+// claim about how any other renderer looks.
 describe("gfmDefaultPresentationThemeSpec", () => {
   it("composes the shared code token presentation spec", () => {
     expect(gfmDefaultPresentationThemeSpec[`.${gfmCodeBlockClassNames.token}.tok-keyword`]).toMatchObject({
@@ -25,7 +25,7 @@ describe("gfmDefaultPresentationThemeSpec", () => {
     });
   });
 
-  it("colours links through the public class, unlined like GitHub's own markdown-body", () => {
+  it("colours links through the public class, and leaves them unlined", () => {
     expect(gfmDefaultPresentationThemeSpec[`.${gfmLinkClassName}`]).toMatchObject({
       color: "var(--mbox-gfm-link-color, #0969da)",
       textDecoration: "none",
@@ -33,7 +33,7 @@ describe("gfmDefaultPresentationThemeSpec", () => {
     });
   });
 
-  it("gives inline code GitHub's monospace stack, size, background, and padding", () => {
+  it("gives inline code a monospace stack, size, background, and padding", () => {
     expect(gfmDefaultPresentationThemeSpec[`.${gfmInlineCodeClassName}`]).toMatchObject({
       fontFamily:
         'var(--mbox-gfm-code-font-family, ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace)',

@@ -2,21 +2,326 @@ import { describe, expect, it, vi } from "vitest";
 import { EditorState, Prec } from "@codemirror/state";
 import { WidgetType, type EditorView } from "@codemirror/view";
 import { createEditorState, createEditorView } from "./create-editor.js";
+import { pointerLeaseField } from "./focused-line.js";
 import { createMboxExtension, mboxDecorationProviders } from "./plugin.js";
-import type { MboxDecorationContext } from "./plugin.js";
+import { createImageKitSpecs } from "../plugins/image-kit.js";
+import { gfmPlugins } from "../plugins/gfm/index.js";
+import { gfmTablePlugin } from "../plugins/gfm/table.js";
+import type { MboxDecorationContext, MboxDecorationSpec, MboxPlugin } from "./plugin.js";
 
 function withEditorView<T>(state: EditorState, run: (context: { parent: HTMLElement; view: EditorView }) => T): T {
   const parent = document.createElement("div");
+  document.body.append(parent);
   const view = createEditorView({ parent, state });
 
   try {
     return run({ parent, view });
   } finally {
     view.destroy();
+    parent.remove();
   }
 }
 
+class LinkWidget extends WidgetType {
+  toDOM(): HTMLElement {
+    const anchor = document.createElement("a");
+    anchor.href = "https://example.com";
+    anchor.textContent = "link";
+    return anchor;
+  }
+}
+
+class ControlWidget extends WidgetType {
+  toDOM(): HTMLElement {
+    const button = document.createElement("button");
+    button.dataset.mboxInteractionLease = "";
+    button.textContent = "control";
+    return button;
+  }
+}
+
+class OtherWidget extends WidgetType {
+  toDOM(): HTMLElement {
+    const element = document.createElement("span");
+    element.className = "other-widget";
+    element.textContent = "other";
+    return element;
+  }
+}
+
+function createPointerLeaseState(readOnly = false): EditorState {
+  return createEditorState({
+    doc: "[link]\nplain",
+    extensions: [createMboxExtension({
+      plugins: [{
+        decorations: (context) => context.activeLineNumbers.has(1)
+          ? [{ from: 0, to: 6, className: "raw-link" }]
+          : [{ type: "replace", from: 0, to: 6, widget: new LinkWidget() }],
+      }],
+    })],
+    readOnly,
+  });
+}
+
+function dispatchPointer(target: EventTarget, type: string, options: PointerEventInit = {}): void {
+  target.dispatchEvent(new PointerEvent(type, {
+    bubbles: true,
+    button: 0,
+    isPrimary: true,
+    pointerId: 1,
+    ...options,
+  }));
+}
+
+function leasedLines(view: EditorView): Array<[number, number]> {
+  return [...view.state.field(pointerLeaseField).entries()];
+}
+
+function createTwoLinkPointerLeaseState(): EditorState {
+  return createEditorState({
+    doc: "[one] [two]",
+    extensions: [createMboxExtension({
+      plugins: [{
+        decorations: (context) => context.activeLineNumbers.has(1)
+          ? [{ from: 0, to: 11, className: "raw-link" }]
+          : [
+              { type: "replace", from: 0, to: 5, widget: new LinkWidget() },
+              { type: "replace", from: 6, to: 11, widget: new LinkWidget() },
+            ],
+      }],
+    })],
+  });
+}
+
+function createRichPointerLeaseState(): EditorState {
+  return createEditorState({
+    doc: "[link] control other",
+    extensions: [createMboxExtension({
+      plugins: [{
+        decorations: (context) => context.activeLineNumbers.has(1)
+          ? [{ from: 0, to: 20, className: "raw-link" }]
+          : [
+              { type: "replace", from: 0, to: 6, widget: new LinkWidget() },
+              { type: "replace", from: 7, to: 14, widget: new ControlWidget() },
+              { type: "replace", from: 15, to: 20, widget: new OtherWidget() },
+            ],
+      }],
+    })],
+  });
+}
+
 describe("createMboxExtension", () => {
+  it("keeps an anchor's line rendered from pointerdown until click completes", () => {
+    vi.useFakeTimers();
+    try {
+      withEditorView(createPointerLeaseState(), ({ parent, view }) => {
+        const anchor = parent.querySelector<HTMLAnchorElement>("a[href]");
+        expect(anchor).not.toBeNull();
+
+        dispatchPointer(anchor!, "pointerdown");
+        expect(leasedLines(view)).toEqual([[1, 1]]);
+        const hasFocus = vi.spyOn(view, "hasFocus", "get").mockReturnValue(true);
+        view.dispatch({ selection: { anchor: 1 } });
+        const leasedAnchor = parent.querySelector<HTMLAnchorElement>("a[href]");
+        expect(leasedAnchor).not.toBeNull();
+
+        leasedAnchor!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        expect(parent.querySelector("a[href]")).not.toBeNull();
+        vi.runAllTimers();
+        expect(leasedLines(view)).toEqual([]);
+        hasFocus.mockRestore();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("releases a press with no click after window pointerup", () => {
+    vi.useFakeTimers();
+    try {
+      withEditorView(createPointerLeaseState(), ({ parent, view }) => {
+        dispatchPointer(parent.querySelector("a[href]")!, "pointerdown");
+        dispatchPointer(window, "pointerup");
+
+        expect(leasedLines(view)).toEqual([[1, 1]]);
+        vi.runAllTimers();
+        expect(leasedLines(view)).toEqual([]);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("releases a leased line on pointercancel", () => {
+    withEditorView(createPointerLeaseState(), ({ parent, view }) => {
+      const anchor = parent.querySelector("a[href]")!;
+      dispatchPointer(anchor, "pointerdown");
+      expect(leasedLines(view)).toEqual([[1, 1]]);
+      dispatchPointer(window, "pointercancel");
+      expect(leasedLines(view)).toEqual([]);
+    });
+  });
+
+  it("releases a leased line on window blur", () => {
+    withEditorView(createPointerLeaseState(), ({ parent, view }) => {
+      dispatchPointer(parent.querySelector("a[href]")!, "pointerdown", { pointerId: 2 });
+      expect(leasedLines(view)).toEqual([[2, 1]]);
+      window.dispatchEvent(new Event("blur"));
+      expect(leasedLines(view)).toEqual([]);
+    });
+  });
+
+  it("releases a leased line when its pointer becomes a drag", () => {
+    withEditorView(createPointerLeaseState(), ({ parent, view }) => {
+      dispatchPointer(parent.querySelector("a[href]")!, "pointerdown", { clientX: 10, clientY: 10 });
+      dispatchPointer(window, "pointermove", { clientX: 13, clientY: 14 });
+      expect(leasedLines(view)).toEqual([[1, 1]]);
+
+      dispatchPointer(window, "pointermove", { clientX: 14, clientY: 14 });
+      expect(leasedLines(view)).toEqual([]);
+    });
+  });
+
+  it("does not lease a non-anchor interaction", () => {
+    withEditorView(createPointerLeaseState(), ({ parent, view }) => {
+      dispatchPointer(parent.querySelector(".cm-line")!, "pointerdown");
+      expect(leasedLines(view)).toEqual([]);
+    });
+  });
+
+  it("does not lease a read-only interaction", () => {
+    withEditorView(createPointerLeaseState(true), ({ parent, view }) => {
+      dispatchPointer(parent.querySelector("a[href]")!, "pointerdown");
+      expect(leasedLines(view)).toEqual([]);
+    });
+  });
+
+  it("leases an anchor when the ambient Element constructor differs", () => {
+    withEditorView(createPointerLeaseState(), ({ parent, view }) => {
+      const anchor = parent.querySelector<HTMLAnchorElement>("a[href]")!;
+      vi.stubGlobal("Element", class DifferentElement {});
+      try {
+        dispatchPointer(anchor, "pointerdown", {
+          pointerId: 1,
+        });
+
+        expect(leasedLines(view)).toEqual([[1, 1]]);
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+  });
+
+  it("observes pointerup through a propagation-stopping interaction descendant", () => {
+    vi.useFakeTimers();
+    try {
+      withEditorView(createPointerLeaseState(), ({ parent, view }) => {
+        const anchor = parent.querySelector("a[href]")!;
+        dispatchPointer(anchor, "pointerdown");
+        const child = document.createElement("span");
+        parent.querySelector("a[href]")!.append(child);
+        child.addEventListener("pointerup", (event) => event.stopPropagation());
+        dispatchPointer(child, "pointerup");
+        vi.runAllTimers();
+
+        expect(leasedLines(view)).toEqual([]);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not let an earlier same-line click release a later pointer's lease", () => {
+    vi.useFakeTimers();
+    try {
+      withEditorView(createTwoLinkPointerLeaseState(), ({ parent, view }) => {
+        const [first] = [...parent.querySelectorAll("a[href]")];
+        dispatchPointer(first, "pointerdown", { pointerId: 1 });
+        const [, second] = [...parent.querySelectorAll("a[href]")];
+        dispatchPointer(second, "pointerdown", { pointerId: 2 });
+        expect(leasedLines(view)).toEqual([[1, 1], [2, 1]]);
+
+        const [currentFirst] = [...parent.querySelectorAll("a[href]")];
+        dispatchPointer(currentFirst, "pointerup", { pointerId: 1 });
+        currentFirst.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        vi.runAllTimers();
+
+        expect(leasedLines(view)).toEqual([[2, 1]]);
+        expect(parent.querySelectorAll("a[href]")).toHaveLength(2);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leases a marked non-anchor control and retains other same-line widgets", () => {
+    withEditorView(createRichPointerLeaseState(), ({ parent, view }) => {
+      const control = parent.querySelector<HTMLButtonElement>("[data-mbox-interaction-lease]")!;
+      dispatchPointer(control, "pointerdown");
+      const hasFocus = vi.spyOn(view, "hasFocus", "get").mockReturnValue(true);
+      view.dispatch({ selection: { anchor: 1 } });
+
+      expect(leasedLines(view)).toEqual([[1, 1]]);
+      expect(parent.querySelector("a[href]")).not.toBeNull();
+      expect(parent.querySelector("[data-mbox-interaction-lease]")).not.toBeNull();
+      expect(parent.querySelector(".other-widget")).not.toBeNull();
+      hasFocus.mockRestore();
+    });
+  });
+
+  it("keeps image-kit's linked preview rather than switching it to its active-line measure widget while leased", () => {
+    const classNames = { image: "lease-image", token: "lease-token", preview: "lease-preview", element: "lease-element" };
+    const measureClassNames = { measure: "lease-measure" };
+    const state = createEditorState({
+      doc: "image",
+      extensions: [createMboxExtension({
+        plugins: [{
+          decorations: (context) => createImageKitSpecs(
+            [{ from: 0, to: 5, src: "image.png", link: "https://example.com" }],
+            context.activeLineNumbers.has(1),
+            context.state.doc,
+            classNames,
+            measureClassNames,
+            "preview",
+          ),
+        }],
+      })],
+    });
+
+    withEditorView(state, ({ parent, view }) => {
+      const anchor = parent.querySelector("a[href]")!;
+      dispatchPointer(anchor, "pointerdown");
+      const hasFocus = vi.spyOn(view, "hasFocus", "get").mockReturnValue(true);
+      view.dispatch({ selection: { anchor: 1 } });
+
+      expect(parent.querySelector("a[href]")).not.toBeNull();
+      expect(parent.querySelector(".lease-preview.lease-measure")).toBeNull();
+      expect(parent.querySelector(".lease-preview")).not.toBeNull();
+      hasFocus.mockRestore();
+    });
+  });
+
+  it("cancels a pending pointerup cleanup when the view is destroyed", () => {
+    vi.useFakeTimers();
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = createEditorView({ parent, state: createPointerLeaseState() });
+    const dispatch = vi.spyOn(view, "dispatch");
+    try {
+      dispatchPointer(parent.querySelector("a[href]")!, "pointerdown");
+      dispatchPointer(parent.querySelector("a[href]")!, "pointerup");
+      dispatch.mockClear();
+      view.destroy();
+      vi.runAllTimers();
+
+      expect(dispatch).not.toHaveBeenCalled();
+    } finally {
+      view.destroy();
+      parent.remove();
+      vi.useRealTimers();
+    }
+  });
+
   it("reports a named provider failure with its original plugin position", () => {
     const error = new Error("provider failed");
     const onDecorationError = vi.fn();
@@ -604,6 +909,43 @@ describe("createMboxExtension", () => {
     });
   });
 
+  it("nests an exactly coincident replace widget in a mark only when both mark boundaries are inclusive", () => {
+    class TestWidget extends WidgetType {
+      toDOM(): HTMLElement {
+        const element = document.createElement("span");
+        element.className = "mbox-test-coincident-widget";
+        element.textContent = "widget";
+        return element;
+      }
+    }
+
+    const createState = (inclusive: boolean) => createEditorState({
+      doc: "ab",
+      extensions: [createMboxExtension({
+        plugins: [{
+          decorations: () => [
+            {
+              from: 0,
+              to: 2,
+              className: "mbox-test-coincident-mark",
+              ...(inclusive ? { inclusiveStart: true, inclusiveEnd: true } : {}),
+            },
+            { type: "replace", from: 0, to: 2, widget: new TestWidget() },
+          ],
+        }],
+      })],
+    });
+
+    withEditorView(createState(false), ({ parent }) => {
+      expect(parent.querySelector(".mbox-test-coincident-mark")).toBeNull();
+      expect(parent.querySelector(".mbox-test-coincident-widget")).not.toBeNull();
+    });
+    withEditorView(createState(true), ({ parent }) => {
+      const mark = parent.querySelector(".mbox-test-coincident-mark");
+      expect(mark?.querySelector(".mbox-test-coincident-widget")).not.toBeNull();
+    });
+  });
+
   it("connects plugin point widget decoration providers to the editor view without replacing text", () => {
     class TestWidget extends WidgetType {
       toDOM(): HTMLElement {
@@ -722,4 +1064,113 @@ describe("createMboxExtension", () => {
     });
   });
 
+  it("creates the view and reports a plugin replace decoration that spans a line break", () => {
+    const onDecorationError = vi.fn();
+    const brokenSpec: MboxDecorationSpec = { type: "replace", from: 0, to: 3 };
+    const state = createEditorState({
+      doc: "a\nb",
+      extensions: [
+        createMboxExtension({
+          onDecorationError,
+          plugins: [{ name: "test/cross-line-replace", decorations: () => [brokenSpec] }],
+        }),
+      ],
+    });
+
+    expect(() => withEditorView(state, () => {})).not.toThrow();
+    expect(onDecorationError).toHaveBeenCalledWith({
+      phase: "lowering",
+      error: expect.objectContaining({
+        name: "RangeError",
+        message: "Replace decorations must not span line breaks (from 0 to 3)",
+      }),
+      spec: brokenSpec,
+      pluginName: "test/cross-line-replace",
+      pluginIndex: 0,
+    });
+  });
+
+});
+
+
+// The GFM table plugin declares the source it discards while idle, and every
+// other provider's mark/replace/widget output over that range is dropped before
+// lowering. The shipped GFM plugins show no difference either way -- the table's
+// own replace already covers the tail, and CodeMirror does not render
+// decorations inside a replaced range. What this guards is a HOST plugin, which
+// `MboxPlugin` invites: measured, a point widget at the tail's first position
+// renders even inside that replace, and a mark reaching into the tail from the
+// last kept cell survives too.
+describe("decoration firewall", () => {
+  const doc = "| a | b |\n| --- | --- |\n| keep | also | gone |";
+  const discardedTailStart = doc.indexOf("| gone");
+
+  class FirewallProbeWidget extends WidgetType {
+    eq(other: WidgetType): boolean {
+      return other instanceof FirewallProbeWidget;
+    }
+
+    toDOM(): HTMLElement {
+      const element = document.createElement("span");
+      element.className = "probe-widget";
+      element.textContent = "W";
+      return element;
+    }
+  }
+
+  const hostPlugin = (decorations: MboxPlugin["decorations"]): MboxPlugin => ({ name: "probe", decorations });
+
+  function renderWith(decorations: MboxPlugin["decorations"]): { widgets: number; marks: number; text: string } {
+    return withEditorView(
+      EditorState.create({ doc, extensions: [createMboxExtension({ plugins: [...gfmPlugins(), hostPlugin(decorations)] })] }),
+      ({ parent }) => ({
+        widgets: parent.querySelectorAll(".probe-widget").length,
+        marks: parent.querySelectorAll(".probe-crossing-mark").length,
+        text: parent.querySelector(".cm-content")?.textContent ?? "",
+      }),
+    );
+  }
+
+  it("drops a host widget placed at the first position of a discarded tail", () => {
+    // Without the firewall this renders: measured `keepalsoW`, one widget.
+    expect(renderWith(() => [{ type: "widget", from: discardedTailStart, widget: new FirewallProbeWidget(), side: -1 }]))
+      .toEqual({ widgets: 0, marks: 0, text: "ab------keepalso" });
+  });
+
+  it("drops a host mark that reaches from a kept cell into a discarded tail", () => {
+    expect(renderWith(() => [{
+      type: "mark",
+      from: doc.indexOf("also"),
+      to: discardedTailStart + 3,
+      className: "probe-crossing-mark",
+    }])).toEqual({ widgets: 0, marks: 0, text: "ab------keepalso" });
+  });
+
+  it.each([
+    ["the same plugin object twice", true],
+    ["two separate table plugins", false],
+  ])("keeps discarding the tail when the table plugin is registered twice (%s)", (_label, sameObject) => {
+    // Exempting only the declaring entry was not enough: two registrations are
+    // two entries, so each firewall dropped the other's own tail replace and
+    // the discarded source came back. Measured before the fix: `keepalso| gone |`.
+    const table = gfmTablePlugin();
+    const plugins = sameObject ? [...gfmPlugins(), table, table] : [...gfmPlugins(), gfmTablePlugin()];
+    const text = withEditorView(
+      EditorState.create({ doc, extensions: [createMboxExtension({ plugins })] }),
+      ({ parent }) => [...parent.querySelectorAll(".cm-line")][2]?.textContent ?? "",
+    );
+
+    expect(text).toBe("keep also".replace(" ", ""));
+  });
+
+  it("leaves a host decoration outside the discarded tail alone", () => {
+    // The negative control: without it, a firewall that dropped everything
+    // would pass both tests above.
+    expect(renderWith(() => [{
+      type: "mark",
+      from: doc.indexOf("keep"),
+      to: doc.indexOf("keep") + 4,
+      className: "probe-crossing-mark",
+    }])).toEqual({ widgets: 0, marks: 1, text: "ab------keepalso" });
+  });
 });

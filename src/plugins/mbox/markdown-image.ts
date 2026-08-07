@@ -32,6 +32,7 @@ const defaultMarkdownImageOptions = {
 
 function createMarkdownImageSpecs(
   document: MboxDocument,
+  source: string | { sliceString(from: number, to: number): string },
   activeLines: MboxActiveLineNumbers,
   classNames: typeof markdownImageClassNames,
   options: MarkdownImagePluginOptions = defaultMarkdownImageOptions,
@@ -48,6 +49,7 @@ function createMarkdownImageSpecs(
               : [],
           ),
           activeLines.has(block.line),
+          source,
           classNames,
           markdownImageInternalClassNames,
           renderMode,
@@ -59,6 +61,6 @@ export function markdownImagePlugin(options: MarkdownImagePluginOptions = {}): M
   return {
     theme: imageKitTheme(markdownImageClassNames, markdownImageInternalClassNames),
     name: "mbox/markdown-image",
-    decorations: (context) => createMarkdownImageSpecs(getMboxDocumentFromState(context.state), context.activeLineNumbers, markdownImageClassNames, options),
+    decorations: (context) => createMarkdownImageSpecs(getMboxDocumentFromState(context.state), context.state.doc, context.activeLineNumbers, markdownImageClassNames, options),
   };
 }

@@ -27,10 +27,22 @@ export const gfmInlineClassNames: Record<GfmInlineStyleType, string> = {
   delete: "mbox-gfm-del",
 };
 
+const gfmInlineTagNames: Record<GfmInlineStyleType, string> = {
+  emphasis: "em",
+  strong: "strong",
+  delete: "del",
+};
+
 function createGfmInlineSpecs(document: GfmDocument, activeLines: Set<number>): MboxDecorationSpec[] {
   const styleSpecs = document.inlineStyles.flatMap((style) =>
     createInlineStyleKitSpecs(
-      { openMarker: style.open, content: style.content, closeMarker: style.close, className: gfmInlineClassNames[style.type] },
+      {
+        openMarker: style.open,
+        content: style.content,
+        closeMarker: style.close,
+        className: gfmInlineClassNames[style.type],
+        tagName: gfmInlineTagNames[style.type],
+      },
       !isLineSpanActive(style, activeLines),
     ),
   );

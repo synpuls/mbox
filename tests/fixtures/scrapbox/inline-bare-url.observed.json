@@ -1,0 +1,12 @@
+{
+  "observedAt": "2026-07-31",
+  "method": "Typed into a page in a personal Cosense project, with the caret on another line so it rendered idle. A screenshot of the rendered screen was examined. No developer tools, network traffic, or scripts were inspected. `linkTarget` is absent because it was not observable from the screen. An absent `facts` key means unobserved; `null` means observed and absent. The filler text placed around syntax during observation was replaced with ASCII; the syntax under observation remains as entered.",
+  "location": "A scratch page in a personal Cosense project, deleted after the observation.",
+  "cases": [
+    {
+      "input": "see https://example.com/a]b too",
+      "observed": "The link colouring covered https://example.com/a]b in full, including the `]` and the `b` after it. The text before it and the text after it stayed plain. The bare URL does not stop at a closing bracket.",
+      "facts": { "linkedText": "https://example.com/a]b" }
+    }
+  ]
+}

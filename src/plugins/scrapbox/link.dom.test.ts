@@ -6,6 +6,7 @@ import { scrapboxDecorationPlugin, scrapboxStrongClassName } from "./decoration.
 import { parseScrapboxDocument } from "./parser.js";
 import {
   scrapboxHashTagClassName,
+  scrapboxIconClassName,
   scrapboxIconImageClassName,
   scrapboxLinkClassName,
   scrapboxLinkPlugin,
@@ -14,9 +15,11 @@ import {
   scrapboxUrlClassName,
   ScrapboxIconWidget,
   ScrapboxLinkWidget,
+  scrapboxStrongIconClassName,
+  scrapboxStrongIconMeasureClassName,
 } from "./link.js";
 import { createTestContext } from "../../editor/test-context.js";
-import type { MboxReplaceDecorationSpec } from "../../editor/plugin.js";
+import type { MboxReplaceDecorationSpec, MboxWidgetDecorationSpec } from "../../editor/plugin.js";
 
 const noActiveLines = new Set<number>();
 
@@ -131,6 +134,48 @@ describe("createScrapboxLinkSpecs", () => {
     expect(dom.getAttribute("href")).toBe("/team/bob");
     expect(image?.getAttribute("src")).toBe("https://icons.example//team/bob.png");
     expect(image?.getAttribute("alt")).toBe("bob");
+  });
+
+  it("renders each icon repeat as a separately wrappable anchor and excludes the suffix from resolver input", () => {
+    const resolved: string[] = [];
+    const [spec] = specsFor("[/team/bob.icon*3]", { iconUrl: (name: string) => (resolved.push(name), `https://icons.example/${name}.png`) });
+    const dom = ((spec as MboxReplaceDecorationSpec).widget as ScrapboxIconWidget).toDOM();
+
+    expect(resolved).toEqual(["/team/bob"]);
+    expect(dom.querySelectorAll(`a.${scrapboxIconClassName}`)).toHaveLength(3);
+    expect(dom.querySelectorAll(`img.${scrapboxIconImageClassName}`)).toHaveLength(3);
+  });
+
+  it("rebuilds an icon widget when only its repeat count changes", () => {
+    const one = new ScrapboxIconWidget("./bob", "bob", undefined, 1);
+    const two = new ScrapboxIconWidget("./bob", "bob", undefined, 2);
+
+    expect(one.eq(two)).toBe(false);
+  });
+
+  it("replaces an exact strong icon's complete double-bracket range, but leaves spaced content as normal strong", () => {
+    const [strongSpec] = specsFor("[[bob.icon*2]]", { iconUrl: (name: string) => `https://icons.example/${name}.png` });
+    expect(strongSpec).toMatchObject({ type: "replace", from: 0, to: 14 });
+    const strongDom = ((strongSpec as MboxReplaceDecorationSpec).widget as ScrapboxIconWidget).toDOM();
+    expect(strongDom.classList).toContain(scrapboxStrongIconClassName);
+    expect(strongDom.querySelectorAll(`a.${scrapboxIconClassName}`)).toHaveLength(2);
+
+    const spacedSpecs = specsFor("[[ bob.icon ]]", { iconUrl: (name: string) => `https://icons.example/${name}.png` });
+    expect(spacedSpecs).toHaveLength(0);
+  });
+
+  it("uses the host-adjustable strong icon scale and reserves its height only on an active line", () => {
+    const theme = scrapboxLinkPlugin().theme!;
+    expect(theme[`.${scrapboxIconImageClassName}`]).toMatchObject({ height: "1em" });
+    expect(theme[`.${scrapboxStrongIconClassName} .${scrapboxIconImageClassName}`]).toMatchObject({ height: "calc(var(--mbox-scrapbox-icon-strong-scale, 3) * 1em)" });
+
+    const activeSpecs = specsFor("[[bob.icon]]", {}, [1]);
+    expect(activeSpecs).toHaveLength(1);
+    const measure = (activeSpecs[0] as MboxWidgetDecorationSpec).widget.toDOM(undefined as never);
+    expect(measure.classList).toContain(scrapboxStrongIconMeasureClassName);
+    expect(measure.getAttribute("aria-hidden")).toBe("true");
+    expect(measure.style.pointerEvents).toBe("none");
+    expect(specsFor("[bob.icon*2]", {}, [1])).toHaveLength(0);
   });
 
   it("builds the internal link href via pageUrl", () => {
@@ -300,9 +345,8 @@ describe("scrapboxLinkPlugin", () => {
     view.dispatch({ selection: EditorSelection.cursor(0) });
 
     expect(parent.querySelector(".cm-line")?.textContent).toBe("[Page]");
-    // No clickable anchor while editing (real Scrapbox does the same -- an
-    // unclickable span carries the color instead), but the color itself
-    // survives onto the active line.
+    // No clickable anchor while editing -- an unclickable span carries the
+    // colour instead -- but the colour itself survives onto the active line.
     expect(parent.querySelector(`a.${scrapboxLinkClassName}`)).toBeNull();
     const mark = parent.querySelector(`.${scrapboxLinkClassName}`);
     expect(mark?.textContent).toBe("[Page]");

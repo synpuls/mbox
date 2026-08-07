@@ -380,7 +380,9 @@ describe("mboxPlugins", () => {
     );
   });
 
-  it("adds code block decorations from the default built-in plugin set", () => {
+  it("renders a control-character-free code language label after CodeMirror normalizes line endings", () => {
+    // This is the editor integration contract, not CRLF parser coverage:
+    // EditorState has already normalized \r\n to \n before parsing.
     withDefaultView(
       {
         doc: "```ts\nconst x = 1\n```",

@@ -52,12 +52,12 @@ test("IME composing text on an empty list line does not overlap the bullet dot",
   await page.locator(".mbox-scrapbox-bullet").first().waitFor();
 
   // Start an IME composition at the caret, as when the user begins typing the
-  // first character of a fresh bullet item. Real Scrapbox keeps the preedit
-  // text clear of the grey gutter dot; ours used to right-align the unconfirmed
-  // text straight onto the dot.
+  // first character of a fresh bullet item. The preedit text has to stay clear
+  // of the grey gutter dot; ours used to right-align the unconfirmed text
+  // straight onto the dot, which made both unreadable.
   const client = await page.context().newCDPSession(page);
   await client.send("Input.imeSetComposition", { text: "あ", selectionStart: 1, selectionEnd: 1 });
-  await page.waitForTimeout(120);
+  await expect(page.locator(".cm-line")).toContainText("あ");
 
   const dot = await scrapboxBulletDotRect(page, 0);
   const composing = await composingCharRect(page, "あ");
@@ -78,7 +78,7 @@ test("IME composing text on an empty list line appears at the caret, not to its 
 
   const client = await page.context().newCDPSession(page);
   await client.send("Input.imeSetComposition", { text: "あ", selectionStart: 1, selectionEnd: 1 });
-  await page.waitForTimeout(120);
+  await expect(page.locator(".cm-line")).toContainText("あ");
 
   const composing = await composingCharRect(page, "あ");
 
@@ -224,9 +224,9 @@ test("scrapbox bullet dot is as large as Scrapbox's (~0.4em of the line font)", 
     };
   });
 
-  // Real Scrapbox paints a 6px dot on a 15px line font — 0.4em. Match that
-  // scale so our dot doesn't look shrunken next to the item text (it used to be
-  // 0.32em, a fifth smaller, which read as too faint/tiny).
+  // 0.4em is a 6px dot at a 15px line font. Hold that scale so the dot doesn't
+  // look shrunken next to the item text (it used to be 0.32em, a fifth smaller,
+  // which read as too faint/tiny).
   expect(dotWidth / fontSize).toBeCloseTo(0.4, 2);
   expect(dotHeight / fontSize).toBeCloseTo(0.4, 2);
 });

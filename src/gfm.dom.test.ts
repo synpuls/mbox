@@ -5,6 +5,8 @@ import {
   createGfmEditorState,
   gfmDefaultPresentationTheme,
   gfmLinkClassName,
+  gfmMathClassName,
+  gfmMathPlugin,
   gfmPlugins,
   gfmUnsafeLinkClassName,
   parseGfmDocument,
@@ -15,6 +17,8 @@ describe("./gfm sub-path", () => {
     expect(gfmPlugins()).toHaveLength(11);
     expect(gfmLinkClassName).toBe("mbox-gfm-link");
     expect(gfmUnsafeLinkClassName).toBe("mbox-gfm-link-unsafe");
+    expect(gfmMathClassName).toBe("mbox-gfm-math");
+    expect(gfmMathPlugin({ render: () => document.createElement("span") }).name).toBe("gfm/math");
     expect(parseGfmDocument("# Hello").headings[0]).toMatchObject({ level: 1 });
 
     const parent = document.createElement("div");

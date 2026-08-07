@@ -123,6 +123,129 @@ test("GFM table semantics are rendered only while the whole table is inactive", 
   await expect(page.locator("#editor .cm-line").first()).toHaveText("| A | B |");
 });
 
+// This is intentionally a browser-layout check: the short row's second cell
+// is a point widget, so a DOM-only test cannot establish that it participates
+// in the flex row with a real, non-zero column box.
+test("GFM malformed table rows discard inactive excess tails while retaining virtual cells and source", async ({ page }) => {
+  await openPlayground(page, "gfm");
+  const doc = "| a | b |\n| --- | --- |\n| 1 | 2 | 3 |\n| 9 |\n\nplain";
+  await setPlaygroundDoc(page, "gfm", doc, doc.length, true);
+
+  const table = page.locator('#editor .cm-line[role="table"]');
+  await expect(table).toHaveAttribute("aria-colcount", "2");
+  const rows = page.locator("#editor .mbox-gfm-table-row");
+  const longCells = rows.nth(0).locator(".mbox-gfm-table-cell");
+  const shortCells = rows.nth(1).locator(".mbox-gfm-table-cell");
+  await expect(longCells).toHaveText(["1", "2"]);
+  await expect(longCells).toHaveCount(2);
+  await expect(shortCells).toHaveCount(2);
+  await expect(shortCells).toHaveText(["9", ""]);
+
+  const virtualWidth = await shortCells.nth(1).evaluate((cell) => cell.getBoundingClientRect().width);
+  expect(virtualWidth).toBeGreaterThan(0);
+
+  await setPlaygroundSelection(page, "gfm", doc.indexOf("3"));
+  await expect(page.locator('#editor [role="table"]')).toHaveCount(0);
+  await expect(page.locator("#editor .cm-line").nth(2)).toHaveText("| 1 | 2 | 3 |");
+  await setPlaygroundSelection(page, "gfm", doc.length);
+  await expect.poll(() => playgroundDocString(page, "gfm")).toBe(doc);
+});
+
+test("GFM Japanese cells reserve their two-ch-per-character column width without crossing into the next column", async ({ page }) => {
+  await openPlayground(page, "gfm");
+  const doc = "| 日本 | B |\n| --- | --- |\n| A | C |\n\nplain";
+  await setPlaygroundDoc(page, "gfm", doc, doc.length, true);
+
+  const layout = await page.locator("#editor .mbox-gfm-table-header").evaluate((row) => {
+    const cells = [...row.querySelectorAll<HTMLElement>(".mbox-gfm-table-cell")];
+    if (cells.length !== 2) throw new Error("Expected two rendered table cells");
+
+    const [japaneseCell, nextCell] = cells;
+    const japaneseRect = japaneseCell.getBoundingClientRect();
+    const nextRect = nextCell.getBoundingClientRect();
+    const probe = document.createElement("span");
+    probe.textContent = "0";
+    probe.style.cssText = `font: ${getComputedStyle(japaneseCell).font}; position: absolute; visibility: hidden`;
+    document.body.append(probe);
+    const chWidth = probe.getBoundingClientRect().width;
+    probe.remove();
+    const extraWidth = getComputedStyle(japaneseCell).getPropertyValue("--mbox-gfm-table-column-extra-width").trim();
+    if (!extraWidth.endsWith("ch")) throw new Error("Expected GFM table cell extra width to be expressed in ch");
+    const extraWidthCh = Number.parseFloat(extraWidth);
+    if (!Number.isFinite(extraWidthCh)) throw new Error("Expected GFM table cell extra width to be numeric");
+
+    return { chWidth, extraWidthCh, japaneseCellWidth: japaneseRect.width, nextCellLeft: nextRect.left, japaneseCellRight: japaneseRect.right };
+  });
+
+  // Two Japanese characters reserve 4ch; measure the demo cell chrome separately.
+  expect(layout.japaneseCellWidth).toBeCloseTo(layout.chWidth * (4 + layout.extraWidthCh), 0);
+  expect(layout.japaneseCellRight).toBeLessThanOrEqual(layout.nextCellLeft + 0.5);
+});
+
+test("GFM decorated table cells reserve their rendered-text width without crossing into the next column", async ({ page }) => {
+  await openPlayground(page, "gfm");
+
+  const measureFirstColumn = async (doc: string) => {
+    await setPlaygroundDoc(page, "gfm", doc, doc.length, true);
+    return page.locator("#editor .mbox-gfm-table-header").evaluate((row) => {
+      const cells = [...row.querySelectorAll<HTMLElement>(".mbox-gfm-table-cell")];
+      if (cells.length !== 2) throw new Error("Expected two rendered table cells");
+
+      const [firstCell, nextCell] = cells;
+      const firstRect = firstCell.getBoundingClientRect();
+      const nextRect = nextCell.getBoundingClientRect();
+      const probe = document.createElement("span");
+      probe.textContent = "0";
+      probe.style.cssText = `font: ${getComputedStyle(firstCell).font}; position: absolute; visibility: hidden`;
+      document.body.append(probe);
+      const chWidth = probe.getBoundingClientRect().width;
+      probe.remove();
+      const extraWidth = getComputedStyle(firstCell).getPropertyValue("--mbox-gfm-table-column-extra-width").trim();
+      if (!extraWidth.endsWith("ch")) throw new Error("Expected GFM table cell extra width to be expressed in ch");
+      const extraWidthCh = Number.parseFloat(extraWidth);
+      if (!Number.isFinite(extraWidthCh)) throw new Error("Expected GFM table cell extra width to be numeric");
+
+      return { chWidth, extraWidthCh, firstCellWidth: firstRect.width, firstCellRight: firstRect.right, nextCellLeft: nextRect.left };
+    });
+  };
+
+  const decorated = await measureFirstColumn("| **bold** | b |\n| --- | --- |\n| x | y |\n\nplain");
+  const plain = await measureFirstColumn("| bold | b |\n| --- | --- |\n| x | y |\n\nplain");
+
+  // The markers are hidden: `**bold**` must claim the same 4ch column as `bold`.
+  expect(decorated.firstCellWidth).toBeCloseTo(decorated.chWidth * (4 + decorated.extraWidthCh), 0);
+  expect(decorated.firstCellWidth).toBeCloseTo(plain.firstCellWidth, 0);
+  expect(decorated.firstCellRight).toBeLessThanOrEqual(decorated.nextCellLeft + 0.5);
+});
+
+test("GFM table link labels reserve their projected width without crossing into the next column", async ({ page }) => {
+  await openPlayground(page, "gfm");
+  const doc = "| [**bold** label](url) | b |\n| --- | --- |\n| x | y |\n\nplain";
+  await setPlaygroundDoc(page, "gfm", doc, doc.length, true);
+
+  const layout = await page.locator("#editor .mbox-gfm-table-header").evaluate((row) => {
+    const cells = [...row.querySelectorAll<HTMLElement>(".mbox-gfm-table-cell")];
+    if (cells.length !== 2) throw new Error("Expected two rendered table cells");
+    const [linkCell, nextCell] = cells;
+    const linkRect = linkCell.getBoundingClientRect();
+    const nextRect = nextCell.getBoundingClientRect();
+    const probe = document.createElement("span");
+    probe.textContent = "0";
+    probe.style.cssText = `font: ${getComputedStyle(linkCell).font}; position: absolute; visibility: hidden`;
+    document.body.append(probe);
+    const chWidth = probe.getBoundingClientRect().width;
+    probe.remove();
+    const extraWidth = Number.parseFloat(getComputedStyle(linkCell).getPropertyValue("--mbox-gfm-table-column-extra-width"));
+    if (!Number.isFinite(extraWidth)) throw new Error("Expected GFM table cell extra width to be numeric");
+    return { chWidth, extraWidth, linkCellWidth: linkRect.width, linkCellRight: linkRect.right, nextCellLeft: nextRect.left };
+  });
+
+  // The anchor renders the same plain projection (`bold label`) that table-kit
+  // measures: inline emphasis markup must not reserve extra source-width space.
+  expect(layout.linkCellWidth).toBeCloseTo(layout.chWidth * ("bold label".length + layout.extraWidth), 0);
+  expect(layout.linkCellRight).toBeLessThanOrEqual(layout.nextCellLeft + 0.5);
+});
+
 test("an inactive inline code span hides its backticks", async ({ page }) => {
   await openPlayground(page, "gfm");
 

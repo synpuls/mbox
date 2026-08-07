@@ -2,7 +2,8 @@
 
 import { describe, expect, it, vi } from "vitest";
 import katex from "katex";
-import { createEditorView } from "mbox";
+import { createEditorState, createEditorView, createMboxExtension } from "mbox";
+import { scrapboxFormulaPlugin } from "mbox/scrapbox";
 import { createScrapboxDemoEditorState, demoRenderFormula, initialScrapboxDocument } from "./scrapbox-demo";
 
 describe("createScrapboxDemoEditorState", () => {
@@ -43,6 +44,24 @@ describe("createScrapboxDemoEditorState", () => {
 
     expect(parent.querySelector(".cm-lineNumbers")).not.toBeNull();
     expect(view.contentDOM.getAttribute("aria-label")).toBe("Scrapbox demo editor");
+
+    view.destroy();
+  });
+
+  it("uses KaTeX's accessible MathML without adding a duplicate TeX fallback", () => {
+    const parent = document.createElement("div");
+    const view = createEditorView({
+      parent,
+      state: createEditorState({
+        doc: "[$ x^2]",
+        extensions: [createMboxExtension({ plugins: [scrapboxFormulaPlugin({ render: demoRenderFormula })] })],
+      }),
+    });
+
+    const formula = parent.querySelector(".mbox-scrapbox-formula");
+    expect(formula?.getAttribute("role")).toBe("math");
+    expect(formula?.querySelector(".katex math")).not.toBeNull();
+    expect(formula?.querySelector(".mbox-scrapbox-formula-source")).toBeNull();
 
     view.destroy();
   });

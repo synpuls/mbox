@@ -11,20 +11,20 @@ import { scrapboxBlockLineNumbers } from "./visible-lines.js";
 
 export const scrapboxInlineCodeTokenClassName = "mbox-scrapbox-code-token";
 
-// Real Scrapbox highlights inline code (`` `...` ``) via highlight.js's
-// content-based auto-detection (confirmed live: its DOM carries hljs-*
-// classes) -- but mbox's own code-block highlighting is Lezer-based, and
-// pulling in a second highlighting engine just for this would be a real
-// architectural fork. Fixing the language to Ruby instead reuses the
-// existing Lezer infra with no new dependency (Ruby is already in
+// Inline code (`` `...` ``) carries no language, so highlighting it at all
+// means guessing. mbox does NOT guess per span: content-based language
+// detection would mean a second highlighting engine alongside the Lezer one
+// the code blocks already use, which is a real architectural fork for a
+// feature this small. Fixing the language to Ruby instead reuses the existing
+// Lezer infra with no new dependency (Ruby is already in
 // @codemirror/language-data's registry, backed by @codemirror/legacy-modes,
 // which is already transitively installed): many short technical snippets
 // tokenize into something reasonable even when they aren't actually Ruby,
 // since keywords/strings/identifiers are broadly similar shapes across
-// languages. A benchmark (see dev-docs/todo.md) found this stays responsive
-// even without a cache at realistic per-document span counts; the cache
-// below is kept anyway as cheap insurance, and is cleared on every doc
-// change so it never grows past what the current document contains.
+// languages. A benchmark found this stays responsive even without a cache at
+// realistic per-document span counts; the cache below is kept anyway as cheap
+// insurance, and is cleared on every doc change so it never grows past what
+// the current document contains.
 const RUBY_LANGUAGE_ID = "ruby";
 
 export interface ScrapboxInlineCodeHighlightPluginOptions {

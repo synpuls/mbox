@@ -69,6 +69,39 @@ describe("scrapboxCodeBlockHighlightPlugin", () => {
 });
 
 describe("scrapboxCodeBlockPlugin", () => {
+  it("keeps code:js as an ordinary card with its Copy button and highlighting", () => {
+    const parent = document.createElement("div");
+    const view = createEditorView({
+      parent,
+      state: EditorState.create({
+        doc: "code:js\n const value = 1;",
+        extensions: [createMboxExtension({ plugins: [scrapboxCodeBlockPlugin(), scrapboxCodeBlockHighlightPlugin()] })],
+      }),
+    });
+
+    expect(parent.querySelector(`.${scrapboxCodeBlockClassName}`)).not.toBeNull();
+    expect(parent.querySelector(`.${scrapboxCodeBlockCopyButtonClassName}`)).not.toBeNull();
+    expect(parent.querySelector(`.${scrapboxCodeBlockClassNames.token}`)).not.toBeNull();
+    view.destroy();
+  });
+
+  it("stays wired through the code-block plugin when EditorState normalizes CRLF", () => {
+    // This protects the editor integration only; parser/consumer CRLF behavior
+    // is covered in the node tests because EditorState has already folded it.
+    const parent = document.createElement("div");
+    const view = createEditorView({
+      parent,
+      state: EditorState.create({
+        doc: "code:a.js\r\n const value = 1;\r\n",
+        extensions: [createMboxExtension({ plugins: [scrapboxCodeBlockPlugin(), scrapboxCodeBlockHighlightPlugin()] })],
+      }),
+    });
+
+    expect(parent.querySelector(`.${scrapboxCodeBlockFileNameClassName}`)?.textContent).toBe("a.js");
+    expect(parent.querySelector(`.${scrapboxCodeBlockClassNames.token}`)).not.toBeNull();
+    view.destroy();
+  });
+
   it("adds code block classes to opener and body lines in the editor view", () => {
     const parent = document.createElement("div");
     const view = createEditorView({

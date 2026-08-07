@@ -25,11 +25,12 @@ function createScrapboxQuoteSpecs(
       return [];
     }
 
-    // Real Scrapbox keeps a quote's left border/color while its line is
-    // focused, and hides the `>` marker with visibility rather than removing
-    // it from layout -- so the marker's width stays reserved and the quote
-    // body's x-position never shifts between focus states (mirroring
-    // mbox/list.ts's own listSyntaxHideClassName pattern).
+    // A focused quote line keeps its left border and colour: the line is still
+    // a quote while you edit it, and dropping the styling would make the line
+    // jump between focus states. The `>` marker is hidden with visibility
+    // rather than removed from layout, so its width stays reserved and the
+    // quote body's x-position never shifts either (mirroring mbox/list.ts's
+    // own listSyntaxHideClassName pattern).
     const active = activeLines.has(line.line);
     return [
       {

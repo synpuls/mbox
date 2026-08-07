@@ -78,6 +78,35 @@ function inlineSource(input: string): string {
   return block.inline.map((node) => input.slice(node.from, node.to)).join("");
 }
 
+const PERFORMANCE_SAMPLES = 5;
+
+function doubledSizeRatio(makeInput: (count: number) => string, count: number): { smaller: number; larger: number; ratio: number } {
+  // Build inputs before timing: string construction is O(n), while this guard
+  // is specifically about the parser's scaling behaviour.
+  const inputs = new Map([count, count * 2].map((size) => [size, makeInput(size)]));
+  const run = (size: number) => parseMboxDocument(inputs.get(size)!);
+
+  // Warm both measured sizes so JIT compilation does not skew either side of
+  // a sample pair.
+  run(count);
+  run(count * 2);
+  // Alternate the order to distribute time-direction effects between sizes,
+  // then use the paired-ratio median rather than its most favorable sample.
+  const samples = Array.from({ length: PERFORMANCE_SAMPLES }, (_, sample) => {
+    const sizes = sample % 2 === 0 ? [count, count * 2] : [count * 2, count];
+    const durations = new Map<number, number>();
+    for (const size of sizes) {
+      const started = performance.now();
+      run(size);
+      durations.set(size, performance.now() - started);
+    }
+    const smaller = durations.get(count)!;
+    const larger = durations.get(count * 2)!;
+    return { smaller, larger, ratio: larger / Math.max(smaller, 0.01) };
+  }).sort((left, right) => left.ratio - right.ratio);
+  return samples[Math.floor(samples.length / 2)]!;
+}
+
 describe("parseMboxDocument (inline)", () => {
   describe("inline", () => {
     it("parses plain text paragraph content as an inline text node", () => {
@@ -810,33 +839,52 @@ describe("parseMboxDocument (inline)", () => {
       });
 
       it("processes scheme-guard failures in linear time", () => {
-        const input = "hxxxxxxx".repeat(18_000);
-        const start = performance.now();
-        const document = parseMboxDocument(input);
+        const makeInput = (count: number) => "hxxxxxxx".repeat(count);
+        const result = doubledSizeRatio(makeInput, 9_000);
 
-        expect(performance.now() - start).toBeLessThan(1_500);
-        expect(document.blocks[0]).toMatchObject({ inline: [{ type: "text", value: input }] });
-      });
+        for (const count of [9_000, 18_000]) {
+          const input = makeInput(count);
+          expect(parseMboxDocument(input).blocks[0]).toMatchObject({ inline: [{ type: "text", value: input }] });
+        }
+        // Verified by mutation: writing the scheme check as
+        // `text.indexOf("https://", index) === index || text.indexOf("http://",
+        // index) === index` -- the same meaning, but indexOf searches forward
+        // from the position where startsWith compares at it -- gives a ratio of
+        // 3.80 here. Two other mutations measured linear instead: a slice-based
+        // check, and deleting the early return outright (this dot-free input
+        // then returns at a memoized nextDot lookup). Those two say nothing
+        // about the rest of the mutation space. The post-completion cap only
+        // records an abnormally slow completed parse; it cannot interrupt
+        // synchronous work that is still running.
+        expect(result.ratio).toBeLessThan(3);
+        expect(result.larger).toBeLessThan(5_000);
+      }, 15_000);
 
       it("processes boundary-clearing dot-check failures in linear time", () => {
-        const input = "(http://x".repeat(16_000);
-        const start = performance.now();
-        const document = parseMboxDocument(input);
+        const makeInput = (count: number) => "(http://x".repeat(count);
+        const result = doubledSizeRatio(makeInput, 30_000);
 
-        expect(performance.now() - start).toBeLessThan(1_500);
-        expect(document.blocks[0]).toMatchObject({ inline: [{ type: "text", value: input }] });
-      });
+        for (const count of [30_000, 60_000]) {
+          const input = makeInput(count);
+          expect(parseMboxDocument(input).blocks[0]).toMatchObject({ inline: [{ type: "text", value: input }] });
+        }
+        expect(result.ratio).toBeLessThan(3);
+        expect(result.larger).toBeLessThan(5_000);
+      }, 15_000);
 
       it("caches punctuation trimming per run in linear time", () => {
         // The per-whitespace-run cache prevents every candidate from rescanning
         // this trailing punctuation; without it, the reject path is quadratic.
-        const input = "(http://x".repeat(24_000) + "!".repeat(24_000);
-        const start = performance.now();
-        const document = parseMboxDocument(input);
+        const makeInput = (count: number) => "(http://x".repeat(count) + "!".repeat(count);
+        const result = doubledSizeRatio(makeInput, 24_000);
 
-        expect(performance.now() - start).toBeLessThan(1_000);
-        expect(document.blocks[0]).toMatchObject({ inline: [{ type: "text", value: input }] });
-      });
+        for (const count of [24_000, 48_000]) {
+          const input = makeInput(count);
+          expect(parseMboxDocument(input).blocks[0]).toMatchObject({ inline: [{ type: "text", value: input }] });
+        }
+        expect(result.ratio).toBeLessThan(3);
+        expect(result.larger).toBeLessThan(5_000);
+      }, 15_000);
     });
 
     describe("large malformed inline prefixes", () => {
@@ -859,29 +907,34 @@ describe("parseMboxDocument (inline)", () => {
       });
 
       it("parses a long overclosed autolink suffix without repeated rescans", () => {
-        const input = `https://example.com${")".repeat(20_000)}`;
-        const start = performance.now();
-        const document = parseMboxDocument(input);
+        const makeInput = (count: number) => `https://example.com${")".repeat(count)}`;
+        const result = doubledSizeRatio(makeInput, 20_000);
 
-        expect(performance.now() - start).toBeLessThan(500);
-        expect(document.blocks[0]).toMatchObject({
-          inline: [
-            { type: "autoLink", urlValue: "https://example.com" },
-            { type: "text", value: ")".repeat(20_000) },
-          ],
-        });
-      });
+        for (const count of [20_000, 40_000]) {
+          expect(parseMboxDocument(makeInput(count)).blocks[0]).toMatchObject({
+            inline: [
+              { type: "autoLink", urlValue: "https://example.com" },
+              { type: "text", value: ")".repeat(count) },
+            ],
+          });
+        }
+        expect(result.ratio).toBeLessThan(3);
+        expect(result.larger).toBeLessThan(5_000);
+      }, 15_000);
 
       it("keeps long unclosed image openers as text without repeated scans", () => {
-        const input = "![".repeat(20_000);
-        const start = performance.now();
-        const document = parseMboxDocument(input);
+        const makeInput = (count: number) => "![".repeat(count);
+        const result = doubledSizeRatio(makeInput, 20_000);
 
-        expect(performance.now() - start).toBeLessThan(500);
-        expect(document.blocks[0]).toMatchObject({
-          inline: [{ type: "text", value: input }],
-        });
-      });
+        for (const count of [20_000, 40_000]) {
+          const input = makeInput(count);
+          expect(parseMboxDocument(input).blocks[0]).toMatchObject({
+            inline: [{ type: "text", value: input }],
+          });
+        }
+        expect(result.ratio).toBeLessThan(3);
+        expect(result.larger).toBeLessThan(5_000);
+      }, 15_000);
 
       it("preserves odd and even image closer escape parity", () => {
         expect(parseMboxDocument(String.raw`![odd \] label](image.png)`).blocks[0]).toMatchObject({
@@ -899,18 +952,20 @@ describe("parseMboxDocument (inline)", () => {
       });
 
       it("keeps long unclosed brackets and footnote prefixes as text before a later autolink", () => {
-        const input = `${"[".repeat(20_000)} ${"[^".repeat(20_000)} https://example.com`;
-        const start = performance.now();
-        const document = parseMboxDocument(input);
+        const makeInput = (count: number) => `${"[".repeat(count)} ${"[^".repeat(count)} https://example.com`;
+        const result = doubledSizeRatio(makeInput, 20_000);
 
-        expect(performance.now() - start).toBeLessThan(500);
-        expect(document.blocks[0]).toMatchObject({
-          inline: [
-            { type: "text", value: `${"[".repeat(20_000)} ${"[^".repeat(20_000)} ` },
-            { type: "autoLink", urlValue: "https://example.com" },
-          ],
-        });
-      });
+        for (const count of [20_000, 40_000]) {
+          expect(parseMboxDocument(makeInput(count)).blocks[0]).toMatchObject({
+            inline: [
+              { type: "text", value: `${"[".repeat(count)} ${"[^".repeat(count)} ` },
+              { type: "autoLink", urlValue: "https://example.com" },
+            ],
+          });
+        }
+        expect(result.ratio).toBeLessThan(3);
+        expect(result.larger).toBeLessThan(5_000);
+      }, 15_000);
 
       it("keeps malformed image prefixes as text before later Markdown nodes", () => {
         const input = "![not-an-image] [label](url) ![alt](image.png)";

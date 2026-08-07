@@ -14,9 +14,10 @@ import { headingPresentationThemeSpec } from "./heading-presentation.js";
  * plugin; this theme only supplies opt-in visual defaults through the public
  * `.mbox-gfm-*` classes, every value overridable with a CSS variable.
  *
- * Values match github-markdown-css (github-markdown-light.css, fetched
- * 2026-07-05 from sindresorhus/github-markdown-css) rather than an arbitrary
- * in-house palette, so a host opting in gets GitHub's own rendering.
+ * The values here are mbox's own defaults for this namespace. They are a
+ * starting point, not a claim about how any other renderer looks: a host that
+ * wants a different appearance sets the CSS variables rather than forking the
+ * theme.
  */
 export const gfmDefaultPresentationThemeSpec: MboxThemeSpec = {
   ...codeTokenPresentationThemeSpec([gfmCodeBlockClassNames.token]),

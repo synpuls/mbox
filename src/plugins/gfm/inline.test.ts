@@ -14,24 +14,24 @@ function specsFor(input: string, activeLines: Iterable<number> = noActiveLines) 
 describe("gfmInlinePlugin", () => {
   it("marks emphasis content and hides its `*` markers while inactive", () => {
     expect(specsFor("a *b* c")).toEqual([
-      { type: "mark", from:3, to: 4, className: "mbox-gfm-em", inclusiveStart: true, inclusiveEnd: true },
+      { type: "mark", from:3, to: 4, className: "mbox-gfm-em", tagName: "em", inclusiveStart: true, inclusiveEnd: true },
       { type: "replace", from: 2, to: 3 },
       { type: "replace", from: 4, to: 5 },
     ]);
   });
 
   it("keeps the content mark but reveals the markers on an active line", () => {
-    expect(specsFor("a *b* c", [1])).toEqual([{ type: "mark", from:3, to: 4, className: "mbox-gfm-em", inclusiveStart: true, inclusiveEnd: true }]);
+    expect(specsFor("a *b* c", [1])).toEqual([{ type: "mark", from:3, to: 4, className: "mbox-gfm-em", tagName: "em", inclusiveStart: true, inclusiveEnd: true }]);
   });
 
   it("uses two-char markers for strong and strikethrough", () => {
     expect(specsFor("a **b** c")).toEqual([
-      { type: "mark", from:4, to: 5, className: "mbox-gfm-strong", inclusiveStart: true, inclusiveEnd: true },
+      { type: "mark", from:4, to: 5, className: "mbox-gfm-strong", tagName: "strong", inclusiveStart: true, inclusiveEnd: true },
       { type: "replace", from: 2, to: 4 },
       { type: "replace", from: 5, to: 7 },
     ]);
     expect(specsFor("a ~~b~~ c")).toEqual([
-      { type: "mark", from:4, to: 5, className: "mbox-gfm-del", inclusiveStart: true, inclusiveEnd: true },
+      { type: "mark", from:4, to: 5, className: "mbox-gfm-del", tagName: "del", inclusiveStart: true, inclusiveEnd: true },
       { type: "replace", from: 2, to: 4 },
       { type: "replace", from: 5, to: 7 },
     ]);
@@ -44,18 +44,18 @@ describe("gfmInlinePlugin", () => {
   describe("a span crossing a line break", () => {
     it("hides both markers only when NEITHER line is active", () => {
       expect(specsFor("x *a\nb* y")).toEqual([
-        { type: "mark", from:3, to: 6, className: "mbox-gfm-em", inclusiveStart: true, inclusiveEnd: true },
+        { type: "mark", from:3, to: 6, className: "mbox-gfm-em", tagName: "em", inclusiveStart: true, inclusiveEnd: true },
         { type: "replace", from: 2, to: 3 },
         { type: "replace", from: 6, to: 7 },
       ]);
     });
 
     it("reveals BOTH markers when only the first line is active", () => {
-      expect(specsFor("x *a\nb* y", [1])).toEqual([{ type: "mark", from:3, to: 6, className: "mbox-gfm-em", inclusiveStart: true, inclusiveEnd: true }]);
+      expect(specsFor("x *a\nb* y", [1])).toEqual([{ type: "mark", from:3, to: 6, className: "mbox-gfm-em", tagName: "em", inclusiveStart: true, inclusiveEnd: true }]);
     });
 
     it("reveals BOTH markers when only the second line is active", () => {
-      expect(specsFor("x *a\nb* y", [2])).toEqual([{ type: "mark", from:3, to: 6, className: "mbox-gfm-em", inclusiveStart: true, inclusiveEnd: true }]);
+      expect(specsFor("x *a\nb* y", [2])).toEqual([{ type: "mark", from:3, to: 6, className: "mbox-gfm-em", tagName: "em", inclusiveStart: true, inclusiveEnd: true }]);
     });
   });
 

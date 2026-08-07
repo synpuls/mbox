@@ -19,14 +19,12 @@
 // mbox's code-block plugin via code-block-kit.
 import type { Language } from "@codemirror/language";
 import type { MboxDecorationSpec, MboxPlugin, MboxThemeSpec } from "../../editor/plugin.js";
-import type { GfmCodeBlock, GfmDocument } from "./parser.js";
+import { isGfmMathFence, type GfmCodeBlock, type GfmDocument } from "./parser.js";
 import { getGfmDocumentFromState } from "./parser-cache.js";
 import {
   CodeBlockKitCopyButtonWidget as GfmCodeBlockCopyButtonWidget,
-  createCodeBlockKitHighlightSpecs,
-  getCodeBlockKitContentLineStarts,
+  createCodeBlockKitSegmentedHighlightSpecs,
   getCodeBlockKitLanguage,
-  getCodeBlockKitLanguageLabelRange,
 } from "../code-block-kit.js";
 import { createCodeBlockKitLanguageLoader } from "../code-block-language-loader.js";
 
@@ -44,8 +42,14 @@ export const gfmCodeBlockClassNames = {
   token: "mbox-gfm-code-token",
 };
 
-function createGfmCodeBlockSpecs(document: GfmDocument, activeLines: Set<number>): MboxDecorationSpec[] {
-  return document.codeBlocks.flatMap((block) => createSpecsForBlock(block, activeLines));
+function createGfmCodeBlockSpecs(
+  document: GfmDocument,
+  activeLines: Set<number>,
+  excludeMathFences: boolean,
+): MboxDecorationSpec[] {
+  return document.codeBlocks.flatMap((block) =>
+    excludeMathFences && isGfmMathFence(block) ? [] : createSpecsForBlock(block, activeLines),
+  );
 }
 
 function createSpecsForBlock(block: GfmCodeBlock, activeLines: Set<number>): MboxDecorationSpec[] {
@@ -56,8 +60,7 @@ function createSpecsForBlock(block: GfmCodeBlock, activeLines: Set<number>): Mbo
 
   // An indented code block has no fences and no header dressing — the container is
   // the whole story. Content-line classes still help the body read as a card.
-  const contentLineStarts = getCodeBlockKitContentLineStarts(block.content, block.value);
-  for (const from of contentLineStarts) {
+  for (const { from } of block.contentSegments) {
     specs.push({ type: "line", from, className: gfmCodeBlockClassNames.contentLine });
   }
 
@@ -77,10 +80,14 @@ function createSpecsForBlock(block: GfmCodeBlock, activeLines: Set<number>): Mbo
   if (!openingActive) {
     // Hide the raw fence run, keep the info string visible and mark its first token
     // as the language label, and float a Copy button after the info.
-    specs.push({ type: "replace", from: block.openingFence.from, to: block.openingFence.to });
-    const label = getCodeBlockKitLanguageLabelRange(block.infoValue, block.info.from);
-    if (label) {
-      specs.push({ type: "mark", from: label.from, to: label.to, className: gfmCodeBlockClassNames.languageLabel });
+      specs.push({ type: "replace", from: block.openingFence.from, to: block.openingFence.to });
+    if (block.language) {
+      specs.push({
+        type: "mark",
+        from: block.language.span.from,
+        to: block.language.span.to,
+        className: gfmCodeBlockClassNames.languageLabel,
+      });
     }
     specs.push({
       type: "widget",
@@ -112,11 +119,12 @@ const gfmCodeBlockTheme: MboxThemeSpec = {
   },
 };
 
-export function gfmCodeBlockPlugin(): MboxPlugin {
+export function gfmCodeBlockPlugin(options: { excludeMathFences?: boolean } = {}): MboxPlugin {
   return {
     theme: gfmCodeBlockTheme,
     name: "gfm/code-block",
-    decorations: (context) => createGfmCodeBlockSpecs(getGfmDocumentFromState(context.state), context.activeLineNumbers),
+    decorations: (context) =>
+      createGfmCodeBlockSpecs(getGfmDocumentFromState(context.state), context.activeLineNumbers, options.excludeMathFences === true),
   };
 }
 
@@ -138,13 +146,16 @@ export interface GfmCodeBlockHighlightPluginOptions {
   onLoadError?: (languageId: string, error: unknown) => void;
 }
 
-function createHighlightSpecs(document: GfmDocument, getLanguage: (infoValue: string) => Language | null): MboxDecorationSpec[] {
+function createHighlightSpecs(document: GfmDocument, getLanguage: (languageId: string) => Language | null): MboxDecorationSpec[] {
   return document.codeBlocks.flatMap((block) => {
-    const language = getLanguage(block.infoValue);
+    if (isGfmMathFence(block)) {
+      return [];
+    }
+    const language = block.language ? getLanguage(block.language.id) : null;
     if (!language) {
       return [];
     }
-    return createCodeBlockKitHighlightSpecs(block.value, block.content.from, language, gfmCodeBlockClassNames.token);
+    return createCodeBlockKitSegmentedHighlightSpecs(block.contentSegments, language, gfmCodeBlockClassNames.token);
   });
 }
 
@@ -157,7 +168,7 @@ export function gfmCodeBlockHighlightPlugin(options: GfmCodeBlockHighlightPlugin
   }
 
   const loader = createCodeBlockKitLanguageLoader(
-    (state) => getGfmDocumentFromState(state).codeBlocks.map((block) => block.infoValue),
+    (state) => getGfmDocumentFromState(state).codeBlocks.flatMap((block) => (block.language ? [block.language.id] : [])),
     {
       ...(options.languages === "all" ? {} : { languages: options.languages }),
       onLoadError: options.onLoadError,

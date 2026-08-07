@@ -9,14 +9,16 @@ export interface InlineStyleKitRange {
 /**
  * One open-marker/content/close-marker span: emphasis, strong, strikethrough,
  * and inline code all share this shape across namespaces. `className` styles
- * the content; the markers carry no class of their own (a `replace` spec's
- * class lives on its widget, and these markers have none).
+ * the content; `tagName`, when supplied by a namespace, chooses its semantic
+ * wrapper. The markers carry no class of their own (a `replace` spec's class
+ * lives on its widget, and these markers have none).
  */
 export interface InlineStyleKitSpan {
   openMarker: InlineStyleKitRange;
   content: InlineStyleKitRange;
   closeMarker: InlineStyleKitRange;
   className: string;
+  tagName?: string;
 }
 
 /**
@@ -37,7 +39,7 @@ export interface InlineStyleKitSpan {
  * here since the scenario is confirmed unreachable, not just unlikely.
  */
 export function createInlineStyleKitSpecs(span: InlineStyleKitSpan, hideMarkers: boolean): MboxDecorationSpec[] {
-  const specs: MboxDecorationSpec[] = [createContentMarkSpec(span.content.from, span.content.to, span.className)];
+  const specs: MboxDecorationSpec[] = [createContentMarkSpec(span.content.from, span.content.to, span.className, span.tagName)];
 
   if (hideMarkers) {
     specs.push({ type: "replace", ...span.openMarker });

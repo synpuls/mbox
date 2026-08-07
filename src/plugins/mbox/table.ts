@@ -24,6 +24,7 @@ import {
   createTableLineSpecs,
   createTablePipeHideSpecs,
   createTableWhitespaceHideSpecs,
+  displayWidth,
   type TableKitClassNames,
   type TableKitRow,
 } from "../table-kit.js";
@@ -86,6 +87,19 @@ export function tablePlugin(): MboxPlugin {
         fontFamily:
           'var(--mbox-table-font-family, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace)',
       },
+      [`.${tableClassNames.cell}`]: {
+        width: "var(--mbox-table-cell-width, var(--mbox-table-kit-column-width))",
+        maxWidth: "var(--mbox-table-kit-cell-max-width, 100%)",
+        minWidth: 0,
+        overflowWrap: "anywhere",
+      },
+      // Both classes: a raw cell carries the base cell class too, so a
+      // single-class rule would only win by being written second.
+      [`.${tableClassNames.cell}.${tableRawCellClassName}`]: {
+        width: "auto",
+        maxWidth: "none",
+        minWidth: "auto",
+      },
     },
     name: "mbox/table",
     decorations: (context) => createTableSpecs(getMboxDocumentFromState(context.state), context.activeLineNumbers),
@@ -101,7 +115,7 @@ function createTableSpecsForBlock(block: MboxTableBlock, activeLines: MboxActive
   return [
     ...createTableLineSpecs(rows, activeLines, kitClassNames, semantics),
     ...createTableHeaderRowSpecs(rows, activeLines, semantics),
-    ...createTableCellSpecs(rows, activeLines, kitClassNames, {}, semantics),
+    ...createTableCellSpecs(rows, activeLines, kitClassNames, { measureWidth: displayWidth }, semantics),
     ...createTableWhitespaceHideSpecs(rows, activeLines),
     ...createTablePipeHideSpecs(rows, activeLines),
   ];

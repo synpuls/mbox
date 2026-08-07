@@ -1,0 +1,32 @@
+{
+  "observedAt": "2026-07-31",
+  "method": "Typed into a page in a personal Cosense project, with the caret on another line so every line rendered idle. Screenshots of the rendered screen were examined. No developer tools, network traffic, or scripts were inspected. The id of a real image was replaced with a synthetic 32-hex id of the same shape. The same five lines appeared twice on the page and rendered identically both times. An absent `facts` key means unobserved; `null` means observed and absent.",
+  "location": "A scratch page in a personal Cosense project, deleted after the observation.",
+  "cases": [
+    {
+      "input": "[https://gyazo.com/0123456789abcdef0123456789abcdef]",
+      "observed": "The image rendered. No file extension is needed for this host.",
+      "facts": { "isImage": true }
+    },
+    {
+      "input": "[https://gyazo.com/0123456789abcdef0123456789abcdef/raw]",
+      "observed": "The image rendered. A /raw suffix is still image notation.",
+      "facts": { "isImage": true }
+    },
+    {
+      "input": "[https://i.gyazo.com/0123456789abcdef0123456789abcdef]",
+      "observed": "Not an image: link-coloured text showing the URL. A subdomain was not accepted.",
+      "facts": { "isImage": false }
+    },
+    {
+      "input": "[https://gyazo.com/0123456789abcdef0123456789abcdef/extra]",
+      "observed": "Not an image: link-coloured text showing the URL. An extra path segment after the id ends it.",
+      "facts": { "isImage": false }
+    },
+    {
+      "input": "https://gyazo.com/0123456789abcdef0123456789abcdef",
+      "observed": "Not an image: link-coloured text showing the URL. Without the surrounding brackets it is an ordinary link.",
+      "facts": { "isImage": false }
+    }
+  ]
+}

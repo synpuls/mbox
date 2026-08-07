@@ -16,7 +16,7 @@ The four notations that ship — mbox's own, GFM, Scrapbox, Hatena — are each 
 npm install @synpuls/mbox
 ```
 
-CodeMirror packages are peer dependencies, installed automatically by npm 7+ / Yarn / pnpm. ESM-only; the editor needs the DOM, so in SSR frameworks construct it client-side.
+CodeMirror packages are peer dependencies, installed automatically by npm 7+ and by pnpm's default `autoInstallPeers`; Yarn expects your project to provide them. ESM-only; the editor needs the DOM, so in SSR frameworks construct it client-side.
 
 ## Quick start
 
@@ -58,12 +58,21 @@ provides no input-size, CPU, or interruption limits, and its document cache
 reparses the full document on every edit; apply limits before fetching,
 decoding, pasting, or programmatic updates.
 
-`image: { renderMode: "preview" }` loads document-specified image URLs. Use
-the default `"token"` mode when external image loading is not intended, and
-apply your own URL, network, CSP, and privacy policies. GFM links, including
-`linkUrl` results, are allowlist-checked; image URLs and host resolver results
-remain the host's responsibility. Prefer an explicit `codeHighlight: {
-languages: [...] }` allowlist over `languages: "all"`.
+**The GFM namespace renders images by default, so it fetches the image URLs a
+document contains.** GitHub proxies those requests; mbox does not, so the
+reader's browser contacts whatever host the document names. If that is not what
+you want, pass `image: { renderMode: "token" }` explicitly — alt text only, no
+network. The mbox and Scrapbox namespaces still default to `"token"`.
+
+Whichever mode you choose, apply your own URL, network, CSP, and privacy
+policies. GFM links, including `linkUrl` results, are allowlist-checked; image
+URLs and host resolver results remain the host's responsibility. Prefer an
+explicit `codeHighlight: { languages: [...] }` allowlist over `languages:
+"all"`.
+
+mbox puts **no width limit on a rendered image** except inside a GFM table
+cell, so an image is as large as the source file unless your CSS says
+otherwise. See the guide's "GFM images and how wide they get".
 
 See [SECURITY.md](https://github.com/synpuls/mbox/blob/main/SECURITY.md#untrusted-content) for the full guidance.
 

@@ -4,7 +4,9 @@ import {
   createMboxExtension,
   editorPresentationTheme,
 } from "mbox";
-import { gfmDefaultPresentationTheme, gfmPlugins } from "mbox/gfm";
+import "katex/dist/katex.min.css";
+import katex from "katex";
+import { gfmDefaultPresentationTheme, gfmPlugins, type GfmMathRenderer } from "mbox/gfm";
 import { createPlaygroundHandle } from "./playground-handle";
 import sampleImageURL from "./sample-image.png";
 import "./styles.css";
@@ -17,6 +19,15 @@ const parent = document.querySelector<HTMLDivElement>("#editor");
 if (!parent) {
   throw new Error("Editor mount element was not found.");
 }
+
+// The demo is a consumer of the optional math hook. KaTeX remains a
+// devDependency: the library itself does not import or depend on it.
+const demoRenderMath: GfmMathRenderer = (expression) => {
+  const element = document.createElement("div");
+  element.innerHTML = katex.renderToString(expression, { displayMode: true, throwOnError: false });
+  return element;
+};
+demoRenderMath.providesAccessibleMath = true;
 
 // A syntax catalog: every supported construct appears once, grouped under a
 // labelled heading. The SUPPORTED / UNSUPPORTED audit lives in
@@ -109,6 +120,12 @@ const doc = [
   "%w[ruby mbox].each { |name| puts Greeter.new.call(name) }",
   "```",
   "",
+  "## Math fence",
+  "",
+  "```math",
+  "\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}",
+  "```",
+  "",
   "## Footnotes",
   "",
   "A claim that needs a source[^src] and a second reference[^2].",
@@ -141,6 +158,7 @@ const view = createEditorView({
           link: { linkUrl: (url) => url },
           image: { renderMode: "preview" },
           codeHighlight: { languages: "all" },
+          math: { render: demoRenderMath },
         }),
       }),
       editorPresentationTheme({ minHeight: "560px" }),

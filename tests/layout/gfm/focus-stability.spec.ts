@@ -2,9 +2,17 @@ import { expect, test, type Page } from "@playwright/test";
 import { openPlayground, setPlaygroundDoc, setPlaygroundSelection } from "../kit/playground-helpers";
 
 // FOCUS-STABILITY BASICS: moving the caret onto a line reveals its raw markers,
-// and for every text construct that reveal must never change the LINE HEIGHT —
-// width shifts are a per-construct policy (see README), but a vertical jump is
-// always a bug. One test per construct measures the construct line's height
+// and for every text construct that reveal must never change the LINE HEIGHT.
+// Width shifts are a per-construct policy; a vertical jump is a bug.
+//
+// ONE EXCEPTION, and it is narrow: a construct that folds SEVERAL PHYSICAL LINES
+// into one rendered representation gives its consumed lines zero height while
+// idle, and they return to a full line when the caret enters. The document below
+// moves. That is the point of the construct, not a defect, and it already
+// shipped for multiline math long before it was written down here — measured, a
+// `$$` block is 95px idle and 63px focused. Those constructs are measured below
+// as deliberate collapse/restore, never as stable height. Everything else, and
+// every single-line marker or widget swap, still owes you an unchanged height. One test per construct measures the construct line's height
 // with the selection elsewhere (unfocused) and on the line (focused).
 //
 // The image line is the one construct whose height comes from a widget; the
@@ -48,10 +56,32 @@ test("deep ATX heading height is focus-stable", async ({ page }) => {
   await expectStableHeight(page, "###### Sixth", 0, 8);
 });
 
-test("setext heading text and underline heights are focus-stable", async ({ page }) => {
+test("a setext heading's own line is focus-stable", async ({ page }) => {
   await openPlayground(page, "gfm");
   await expectStableHeight(page, "Setext\n======", 0, 2);
-  await expectStableHeight(page, "Setext\n======", 1, 9);
+});
+
+// The exception, stated as a measurement rather than left to be discovered.
+async function expectCollapseAndRestore(page: Page, doc: string, lineIndex: number, focusPos: number): Promise<void> {
+  const fullDoc = `${doc}\nplain trailing line`;
+
+  await setPlaygroundDoc(page, "gfm", fullDoc, fullDoc.length, true);
+  expect(await lineHeight(page, lineIndex)).toBe(0);
+
+  await setPlaygroundSelection(page, "gfm", focusPos);
+  expect(await lineHeight(page, lineIndex)).toBeGreaterThan(0);
+}
+
+test("a setext underline collapses while idle and returns when the caret enters", async ({ page }) => {
+  await openPlayground(page, "gfm");
+  await expectCollapseAndRestore(page, "Setext\n======", 1, 9);
+});
+
+// The exception did not arrive with setext: this has shipped for as long as
+// multiline math has, and no test named it until now.
+test("a multiline math block's interior collapses while idle and returns", async ({ page }) => {
+  await openPlayground(page, "gfm");
+  await expectCollapseAndRestore(page, "$$\nx^2\n$$", 1, 4);
 });
 
 test("bullet and ordered list item heights are focus-stable", async ({ page }) => {

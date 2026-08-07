@@ -1,4 +1,5 @@
 import { parseScrapboxLineInline, type ScrapboxInlineNode } from "./inline.js";
+import { createLogicalLines } from "../logical-lines.js";
 
 export interface ScrapboxRange {
   from: number;
@@ -9,8 +10,11 @@ export type ScrapboxListType = "none" | "bullet" | "number";
 
 export interface ScrapboxLine {
   line: number;
+  /** Raw input end, including a CR in a CRLF terminator. */
   from: number;
   to: number;
+  /** Syntax-facing end; excludes only the CR in a CRLF terminator. */
+  logicalTo: number;
   indent: number;
   listType: ScrapboxListType;
   marker: ScrapboxRange;
@@ -28,6 +32,8 @@ export interface ScrapboxLine {
 
 export interface ScrapboxCodeBlock {
   type: "codeBlock";
+  /** `code:tex` and `code:latex` are Cosense formula blocks, not code cards. */
+  kind: "code" | "formula";
   indent: number;
   fileName: string;
   openerLine: ScrapboxLine;
@@ -63,18 +69,15 @@ const codeBlockPrefix = "code:";
  * after the leading whitespace.
  */
 export function parseScrapboxDocument(input: string): ScrapboxDocument {
-  const texts = input.split("\n");
+  const geometry = createLogicalLines(input);
   const lines: ScrapboxLine[] = [];
-  let offset = 0;
 
-  for (let index = 0; index < texts.length; index++) {
-    const text = texts[index];
-    const from = offset;
-    const to = from + text.length;
+  for (const cell of geometry) {
+    const { text, from, to, logicalTo } = cell;
 
     const indent = leadingWhitespaceRegExp.exec(text)?.[0].length ?? 0;
     const contentFrom = from + indent;
-    const content: ScrapboxRange = { from: contentFrom, to };
+    const content: ScrapboxRange = { from: contentFrom, to: logicalTo };
     const contentText = text.slice(indent);
     const numberMatch = numberListRegExp.exec(contentText);
 
@@ -92,9 +95,10 @@ export function parseScrapboxDocument(input: string): ScrapboxDocument {
     }
 
     lines.push({
-      line: index + 1,
+      line: cell.line,
       from,
       to,
+      logicalTo,
       indent,
       listType,
       marker: { from, to: contentFrom },
@@ -104,7 +108,6 @@ export function parseScrapboxDocument(input: string): ScrapboxDocument {
       inline: [],
     });
 
-    offset = to + 1;
   }
 
   const { codeBlocks, tableBlocks } = detectBlocks(input, lines);
@@ -113,9 +116,10 @@ export function parseScrapboxDocument(input: string): ScrapboxDocument {
   // (link / decoration / image / formula) reads `line.inline` instead of
   // re-parsing the line. The block-level parse is already shared through the
   // document cache; this makes the inline parse shared too, instead of running
-  // once per provider. Only CODE-block lines stay fully literal (empty inline);
-  // table lines keep their inline because images may appear inside table cells
-  // (the image plugin skips only code blocks, not tables).
+  // once per provider. Only CODE-block lines stay fully literal (empty inline).
+  // Table cells retain inline nodes because mbox renders page and external
+  // links there, while individual providers leave table syntax that would break
+  // the cell grid, such as images and formulas, raw.
   const literalLineNumbers = blockLineNumbers(codeBlocks);
   for (const line of lines) {
     if (!literalLineNumbers.has(line.line)) {
@@ -141,7 +145,7 @@ function detectBlocks(
 
   while (index < lines.length) {
     const openerLine = lines[index];
-    const contentText = input.slice(openerLine.content.from, openerLine.to);
+    const contentText = input.slice(openerLine.content.from, openerLine.logicalTo);
     const isCode = contentText.startsWith(codeBlockPrefix);
     const isTable = contentText.startsWith(tableBlockPrefix);
     if (!isCode && !isTable) {
@@ -159,6 +163,7 @@ function detectBlocks(
     if (isCode) {
       codeBlocks.push({
         type: "codeBlock",
+        kind: contentText.slice(codeBlockPrefix.length) === "tex" || contentText.slice(codeBlockPrefix.length) === "latex" ? "formula" : "code",
         indent: openerLine.indent,
         fileName: contentText.slice(codeBlockPrefix.length),
         openerLine,

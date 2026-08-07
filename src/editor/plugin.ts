@@ -1,6 +1,12 @@
 import { Facet, Prec, type EditorState, type Extension } from "@codemirror/state";
-import { Decoration, EditorView, keymap, type KeyBinding, type WidgetType } from "@codemirror/view";
-import { getActiveLineNumbersFromView, type MboxActiveLineNumbers } from "./focused-line.js";
+import { Decoration, EditorView, keymap, ViewPlugin, type KeyBinding, type WidgetType } from "@codemirror/view";
+import {
+  clearPointerLease,
+  getActiveLineNumbersFromView,
+  pointerLeaseField,
+  setPointerLease,
+  type MboxActiveLineNumbers,
+} from "./focused-line.js";
 
 export type MboxThemeSpec = Parameters<typeof EditorView.theme>[0];
 
@@ -17,6 +23,8 @@ export interface MboxMarkDecorationSpec {
   from: number;
   to: number;
   className: string;
+  /** Optional semantic element used to wrap the marked content. */
+  tagName?: string;
   attributes?: Record<string, string>;
   inclusiveStart?: boolean;
   inclusiveEnd?: boolean;
@@ -101,8 +109,16 @@ export interface MboxDecorationContext {
 }
 export type MboxDecorationProvider = (context: MboxDecorationContext) => MboxDecorationSpec[];
 
+/** An inactive source range whose non-owner decorations must not render. */
+interface MboxDecorationFirewallRange {
+  from: number;
+  to: number;
+}
+type MboxDecorationFirewallProvider = (context: MboxDecorationContext) => MboxDecorationFirewallRange[];
+
 export interface MboxDecorationProviderEntry {
   provider: MboxDecorationProvider;
+  firewallRanges?: MboxDecorationFirewallProvider;
   pluginName?: string;
   pluginIndex?: number;
 }
@@ -135,6 +151,12 @@ export interface MboxPlugin {
   keymap?: KeyBinding[];
   theme?: MboxThemeSpec;
   decorations?: MboxDecorationProvider;
+  /**
+   * Internal structural ownership boundary. Its ranges suppress mark, replace,
+   * and widget output from every other provider before lowering; the declaring
+   * provider is exempt by provenance, not by decoration shape.
+   */
+  decorationFirewallRanges?: MboxDecorationFirewallProvider;
 }
 
 export const mboxDecorationProviders = Facet.define<MboxDecorationProviderEntry, MboxDecorationProviderEntry[]>({
@@ -203,8 +225,21 @@ export function createMboxDecorationSetSafe(
  * marks that only ever style a fixed syntax fragment (a footnote marker, a
  * heading's hidden `#`, ...) do not need these inclusive boundaries.
  */
-export function createContentMarkSpec(from: number, to: number, className: string): MboxMarkDecorationSpec {
-  return { type: "mark", from, to, className, inclusiveStart: true, inclusiveEnd: true };
+export function createContentMarkSpec(
+  from: number,
+  to: number,
+  className: string,
+  tagName?: string,
+): MboxMarkDecorationSpec {
+  return {
+    type: "mark",
+    from,
+    to,
+    className,
+    ...(tagName === undefined ? {} : { tagName }),
+    inclusiveStart: true,
+    inclusiveEnd: true,
+  };
 }
 
 const mboxDecorationErrorHandlers = Facet.define<(error: MboxDecorationError) => void, Array<(error: MboxDecorationError) => void>>({
@@ -229,6 +264,15 @@ const mboxDecorations = EditorView.decorations.of((view) => {
   };
 
   const context = createMboxDecorationContext(view);
+  const firewallRanges = providers.flatMap((entry) => {
+    if (!entry.firewallRanges) return [];
+    try {
+      return entry.firewallRanges(context).map((range) => ({ range, owner: entry }));
+    } catch (error) {
+      onDecorationError({ phase: "provider", error, pluginName: entry.pluginName, pluginIndex: entry.pluginIndex });
+      return [];
+    }
+  });
   const ranges: ReturnType<typeof createDecorationRanges> = [];
   for (const entry of providers) {
     let specs: MboxDecorationSpec[];
@@ -238,7 +282,13 @@ const mboxDecorations = EditorView.decorations.of((view) => {
       onDecorationError({ phase: "provider", error, pluginName: entry.pluginName, pluginIndex: entry.pluginIndex });
       continue;
     }
-    appendMboxDecorationRangesSafe(view.state, specs, ranges, entry, onDecorationError);
+    appendMboxDecorationRangesSafe(
+      view.state,
+      filterSpecsThroughDecorationFirewall(specs, firewallRanges, entry),
+      ranges,
+      entry,
+      onDecorationError,
+    );
   }
   return createMboxDecorationSetFromRangesSafe(ranges, onDecorationError);
 });
@@ -247,7 +297,9 @@ export function createMboxExtension(options: CreateMboxExtensionOptions = {}): E
   const { plugins = [], onDecorationError } = options;
   const themeSpecs = plugins.flatMap((plugin) => (plugin.theme ? [plugin.theme] : []));
   const decorationProviders = plugins.flatMap((plugin, pluginIndex) =>
-    plugin.decorations ? [{ provider: plugin.decorations, pluginName: plugin.name, pluginIndex }] : [],
+    plugin.decorations
+      ? [{ provider: plugin.decorations, firewallRanges: plugin.decorationFirewallRanges, pluginName: plugin.name, pluginIndex }]
+      : [],
   );
   const pluginKeymaps = plugins.flatMap((plugin) => plugin.keymap ?? []);
 
@@ -255,10 +307,179 @@ export function createMboxExtension(options: CreateMboxExtensionOptions = {}): E
     themeSpecs.map((theme) => EditorView.theme(theme)),
     decorationProviders.map((entry) => mboxDecorationProviders.of(entry)),
     onDecorationError ? mboxDecorationErrorHandlers.of(onDecorationError) : [],
+    pointerLeaseField,
+    pointerLeaseController,
     mboxDecorations,
     pluginKeymaps.length > 0 ? Prec.high(keymap.of(pluginKeymaps)) : [],
     plugins.flatMap((plugin) => plugin.extensions ?? []),
   ];
+}
+
+function filterSpecsThroughDecorationFirewall(
+  specs: MboxDecorationSpec[],
+  firewallRanges: readonly { range: MboxDecorationFirewallRange; owner: MboxDecorationProviderEntry }[],
+  producer: MboxDecorationProviderEntry,
+): MboxDecorationSpec[] {
+  if (firewallRanges.length === 0) return specs;
+  // A provider that declares firewall ranges owns structure, so no firewall
+  // filters it -- not even another one's. Comparing entries alone was not
+  // enough: registering the same plugin twice makes two entries, and each
+  // one's firewall then swallowed the other's own replace, leaving the
+  // discarded source visible (measured: `keepalso| gone |`).
+  if (producer.firewallRanges) return specs;
+  return specs.filter((spec) => {
+    if (spec.type === "line" || spec.type === "lineRange") return true;
+    return !firewallRanges.some(({ range, owner }) => owner !== producer && (
+      spec.type === "widget"
+        ? spec.from >= range.from && spec.from < range.to
+        : spec.from < range.to && spec.to > range.from
+    ));
+  });
+}
+
+const pointerLeaseDragThreshold = 5;
+
+interface ActivePointerLease {
+  pointerId: number;
+  lineNumber: number;
+  startX: number;
+  startY: number;
+  token: number;
+}
+
+class PointerLeaseController {
+  private readonly window: Window;
+  private readonly leases = new Map<number, ActivePointerLease>();
+  private readonly releaseTimers = new Map<number, ReturnType<typeof setTimeout>>();
+  private nextToken = 0;
+
+  constructor(private readonly view: EditorView) {
+    this.window = view.dom.ownerDocument.defaultView ?? window;
+    view.contentDOM.addEventListener("pointerdown", this.onPointerDown, true);
+    view.contentDOM.addEventListener("click", this.onClick, true);
+    this.window.addEventListener("pointermove", this.onPointerMove, true);
+    this.window.addEventListener("pointerup", this.onPointerUp, true);
+    this.window.addEventListener("pointercancel", this.onPointerCancel, true);
+    this.window.addEventListener("blur", this.onBlur);
+  }
+
+  destroy(): void {
+    this.view.contentDOM.removeEventListener("pointerdown", this.onPointerDown, true);
+    this.view.contentDOM.removeEventListener("click", this.onClick, true);
+    this.window.removeEventListener("pointermove", this.onPointerMove, true);
+    this.window.removeEventListener("pointerup", this.onPointerUp, true);
+    this.window.removeEventListener("pointercancel", this.onPointerCancel, true);
+    this.window.removeEventListener("blur", this.onBlur);
+    for (const timer of this.releaseTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.releaseTimers.clear();
+  }
+
+  private readonly onPointerDown = (event: PointerEvent): void => {
+    if (this.view.state.readOnly || event.button !== 0 || !event.isPrimary) {
+      return;
+    }
+    const target = interactionLeaseTarget(event.target, this.view.contentDOM);
+    if (target === undefined) {
+      return;
+    }
+
+    const lineNumber = this.view.state.doc.lineAt(this.view.posAtDOM(target, 0)).number;
+    const lease = {
+      pointerId: event.pointerId,
+      lineNumber,
+      startX: event.clientX,
+      startY: event.clientY,
+      token: this.nextToken += 1,
+    };
+    const existing = this.leases.get(lease.pointerId);
+    if (existing !== undefined) {
+      this.release(existing);
+    }
+    this.leases.set(lease.pointerId, lease);
+    this.view.dispatch({ effects: setPointerLease.of({ pointerId: lease.pointerId, lineNumber }) });
+  };
+
+  private readonly onPointerMove = (event: PointerEvent): void => {
+    const lease = this.leases.get(event.pointerId);
+    if (lease === undefined) {
+      return;
+    }
+    if (Math.hypot(event.clientX - lease.startX, event.clientY - lease.startY) > pointerLeaseDragThreshold) {
+      this.release(lease);
+    }
+  };
+
+  private readonly onPointerUp = (event: PointerEvent): void => {
+    const lease = this.leases.get(event.pointerId);
+    if (lease !== undefined) {
+      this.scheduleRelease(lease);
+    }
+  };
+
+  private readonly onPointerCancel = (event: PointerEvent): void => {
+    const lease = this.leases.get(event.pointerId);
+    if (lease !== undefined) {
+      this.release(lease);
+    }
+  };
+
+  private readonly onBlur = (): void => {
+    for (const lease of [...this.leases.values()]) {
+      this.release(lease);
+    }
+  };
+
+  private readonly onClick = (event: MouseEvent): void => {
+    const target = interactionLeaseTarget(event.target, this.view.contentDOM);
+    if (target === undefined) {
+      return;
+    }
+    const lineNumber = this.view.state.doc.lineAt(this.view.posAtDOM(target, 0)).number;
+    const leases = [...this.leases.values()].filter((lease) => lease.lineNumber === lineNumber);
+    // Click does not expose a pointer id. It can release a lease only when
+    // exactly one lease began on this line; otherwise pointerup owns cleanup.
+    if (leases.length === 1) {
+      this.scheduleRelease(leases[0]);
+    }
+  };
+
+  private scheduleRelease(lease: ActivePointerLease): void {
+    if (this.releaseTimers.has(lease.pointerId)) {
+      return;
+    }
+    // This task runs after click dispatch and native activation.
+    const timer = setTimeout(() => {
+      this.releaseTimers.delete(lease.pointerId);
+      this.release(lease);
+    }, 0);
+    this.releaseTimers.set(lease.pointerId, timer);
+  }
+
+  private release(lease: ActivePointerLease): void {
+    if (this.leases.get(lease.pointerId)?.token !== lease.token) {
+      return;
+    }
+    const timer = this.releaseTimers.get(lease.pointerId);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.releaseTimers.delete(lease.pointerId);
+    }
+    this.leases.delete(lease.pointerId);
+    this.view.dispatch({ effects: clearPointerLease.of(lease.pointerId) });
+  }
+}
+
+const pointerLeaseController = ViewPlugin.fromClass(PointerLeaseController);
+
+function interactionLeaseTarget(target: EventTarget | null, contentDOM: HTMLElement): Element | undefined {
+  // Use a structural check so differing DOM realms do not reject a valid target.
+  if (target === null || typeof (target as { closest?: unknown }).closest !== "function") {
+    return undefined;
+  }
+  const interaction = (target as Element).closest("a[href], [data-mbox-interaction-lease]");
+  return interaction !== null && contentDOM.contains(interaction) ? interaction : undefined;
 }
 
 function appendMboxDecorationRangesSafe(
@@ -311,7 +532,7 @@ function createMboxDecorationContext(view: MboxDecorationContextSource): MboxDec
 }
 
 function createDecorationRanges(spec: MboxDecorationSpec, state: EditorState) {
-  const normalizedSpecs = normalizeDecorationSpec(spec, state.doc.length);
+  const normalizedSpecs = normalizeDecorationSpec(spec, state.doc.length, state.doc);
 
   return normalizedSpecs.flatMap((normalizedSpec) => lowerDecorationSpec(normalizedSpec, state));
 }
@@ -319,7 +540,7 @@ function createDecorationRanges(spec: MboxDecorationSpec, state: EditorState) {
 /** Validates coordinates and turns every input spec into zero or more specs
  * that CodeMirror can lower. Empty ranges are valid input: marks and plain
  * replacements disappear, while a replacement widget becomes a point widget. */
-function normalizeDecorationSpec(spec: MboxDecorationSpec, documentLength: number): MboxDecorationSpec[] {
+function normalizeDecorationSpec(spec: MboxDecorationSpec, documentLength: number, doc?: EditorState["doc"]): MboxDecorationSpec[] {
   switch (spec.type) {
     case undefined:
     case "mark":
@@ -331,6 +552,9 @@ function normalizeDecorationSpec(spec: MboxDecorationSpec, documentLength: numbe
       validateDecorationPosition(spec.from, documentLength);
       validateDecorationPosition(spec.to, documentLength);
       validateDecorationRange(spec.from, spec.to);
+      if (doc?.sliceString(spec.from, spec.to).includes("\n")) {
+        throw new RangeError(`Replace decorations must not span line breaks (from ${spec.from} to ${spec.to})`);
+      }
       if (spec.from !== spec.to) return [spec];
       return spec.widget ? [{ type: "widget", from: spec.from, widget: spec.widget }] : [];
     case "lineRange":
@@ -418,6 +642,7 @@ function createDecorationRange(
 
   return Decoration.mark({
     class: spec.className,
+    tagName: spec.tagName,
     attributes: spec.attributes,
     inclusiveStart: spec.inclusiveStart,
     inclusiveEnd: spec.inclusiveEnd,

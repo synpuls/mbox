@@ -1,7 +1,7 @@
 import { WidgetType } from "@codemirror/view";
 import type { MboxDecorationSpec, MboxPlugin } from "../../editor/plugin.js";
 import type { HatenaDocument, HatenaLinkKind } from "./parser.js";
-import { hatenaDecorationProvider } from "./shared.js";
+import { getHatenaDocumentFromState } from "./parser-cache.js";
 import { createAnchorElement, createInactiveInlineNotationSpecs } from "../inline-notation-kit.js";
 
 // Inline links render as anchors on inactive lines and stay raw text on active
@@ -61,6 +61,7 @@ export class HatenaLinkWidget extends WidgetType {
 
 function createHatenaLinkSpecs(
   document: HatenaDocument,
+  source: string | { sliceString(from: number, to: number): string },
   activeLines: Set<number>,
   idUrl: (name: string) => string,
 ): MboxDecorationSpec[] {
@@ -68,7 +69,7 @@ function createHatenaLinkSpecs(
   // (Super-pre body lines already carry no links from the parser.)
   return document.lines.flatMap((line) =>
     line.links.flatMap((link) =>
-      createInactiveInlineNotationSpecs(link, activeLines.has(line.line), () => {
+      createInactiveInlineNotationSpecs(link, activeLines.has(line.line), source, () => {
         const href = link.kind === "id" ? idUrl(link.href) : link.href;
         return new HatenaLinkWidget(href, link.label, link.kind);
       }),
@@ -80,6 +81,6 @@ export function hatenaLinkPlugin(options: HatenaLinkOptions = {}): MboxPlugin {
   const idUrl = options.idUrl ?? defaultIdUrl;
   return {
     name: "hatena/link",
-    decorations: hatenaDecorationProvider((document, activeLines) => createHatenaLinkSpecs(document, activeLines, idUrl)),
+    decorations: (context) => createHatenaLinkSpecs(getHatenaDocumentFromState(context.state), context.state.doc, context.activeLineNumbers, idUrl),
   };
 }

@@ -203,8 +203,7 @@ export interface MboxEmojiNode extends MboxRange {
 /** @internal */
 export interface MboxBlockParserContext {
   input: string;
-  lines: string[];
-  lineStarts: number[];
+  lines: LogicalLine[];
   lineIndex: number;
 }
 
@@ -215,3 +214,4 @@ export interface MboxBlockParseResult {
 }
 
 export type MboxBlockParser = (context: MboxBlockParserContext) => MboxBlockParseResult | null;
+import type { LogicalLine } from "../logical-lines.js";

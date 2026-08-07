@@ -28,6 +28,9 @@ describe("createCodeBlockSpecs", () => {
       "typescript",
     );
     expect(getCodeBlockLanguageId(parseMboxDocument("```\nconst x = 1\n```").blocks[0])).toBeNull();
+    // A lone CR is source text rather than a parser terminator. The kit's
+    // boundary contract must still refuse it instead of repairing it here.
+    expect(getCodeBlockLanguageId(parseMboxDocument("```ts\r").blocks[0])).toBeNull();
   });
 
   it("creates line specs for each fenced code block line", () => {

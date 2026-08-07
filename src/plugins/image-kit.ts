@@ -1,5 +1,6 @@
 import { WidgetType } from "@codemirror/view";
 import type { MboxDecorationSpec, MboxThemeSpec } from "../editor/plugin.js";
+import { canReplaceInlineNotation, type InlineNotationSource } from "./inline-notation-kit.js";
 
 export type ImageKitRenderMode = "token" | "preview";
 
@@ -181,9 +182,63 @@ function imageDataForWidget(image: ImageKitInfo): ImageKitImage {
   return imageData;
 }
 
+const measureObserverKey = Symbol("mboxMeasureObserver");
+
+type MeasureFigure = HTMLElement & { [measureObserverKey]?: ResizeObserver };
+
+/**
+ * A measure figure that cancels its own inline advance.
+ *
+ * The plain {@link ImageKitMeasureWidget} reserves the preview's height AND its
+ * width, which shoves any same-line text far to the right while the line is
+ * being edited. A host can undo that with a negative margin of its own, but
+ * only if it knows the figure's width -- which is responsive, so it does not.
+ *
+ * The figure stays in normal flow, because its sizing has to resolve against
+ * the real content width: a wrapper that could clip it would become its
+ * containing block and collapse the width, taking the height with it. Instead
+ * its rendered width is pulled back with a negative inline-end margin, so the
+ * inline advance is ~0 while the height stays, and a ResizeObserver keeps that
+ * margin in step as the content width changes.
+ *
+ * Opt in per notation. The mbox notation deliberately does not use this -- its
+ * demo cancels the width in CSS, and changing that would change how an mbox
+ * document looks while editing.
+ */
+export class ImageKitSelfCancelingMeasureWidget extends ImageKitMeasureWidget {
+  toDOM(): HTMLElement {
+    const figure = this.renderFigure();
+    figure.style.marginInlineEnd = "0px";
+
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(([entry]) => {
+        // `borderBoxSize` is the LAYOUT size, the same coordinate space as
+        // margin. `getBoundingClientRect()` reports the post-transform visual
+        // size, so under an ancestor `transform: scale(...)` cancelling by it
+        // would leave a stale advance. The margin does not change the observed
+        // border-box size, so this cannot feed back into a resize loop; the
+        // equality guard also skips redundant style writes.
+        const inlineSize = entry?.borderBoxSize?.[0]?.inlineSize ?? figure.offsetWidth;
+        const marginInlineEnd = `-${inlineSize}px`;
+        if (figure.style.marginInlineEnd !== marginInlineEnd) {
+          figure.style.marginInlineEnd = marginInlineEnd;
+        }
+      });
+      observer.observe(figure);
+      (figure as MeasureFigure)[measureObserverKey] = observer;
+    }
+    return figure;
+  }
+
+  destroy(dom: HTMLElement): void {
+    (dom as MeasureFigure)[measureObserverKey]?.disconnect();
+  }
+}
+
 export function createImageKitSpecs(
   images: ImageKitInfo[],
   active: boolean,
+  source: InlineNotationSource,
   classNames: ImageKitClassNames,
   measureClassNames: ImageKitMeasureClassNames,
   renderMode: ImageKitRenderMode,
@@ -197,6 +252,12 @@ export function createImageKitSpecs(
 
   return images.flatMap((image): MboxDecorationSpec[] => {
     const widgetImage = imageDataForWidget(image);
+
+    // See canReplaceInlineNotation: this is the image-kit route, rather than
+    // the shared link/footnote route. Section 8A will render its hidden lines.
+    if (!canReplaceInlineNotation(image, source)) {
+      return [];
+    }
 
     if (active) {
       return renderMode === "preview"
